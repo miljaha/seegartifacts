@@ -2,7 +2,8 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [19];%,77,78,79,80,81,82,83,84,85,86,87,88,90,91,94,95,96];         % Subject number
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
+32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
 
 % Maximum and minumum length of data procesed at once. You can edit these
 % depending on the computer you use, longer max length of segment makes the
@@ -11,7 +12,7 @@ subj_nums = [19];%,77,78,79,80,81,82,83,84,85,86,87,88,90,91,94,95,96];         
 % calculation. Basically, all segments will be the max length and then the
 % remaining time, but if remaining time would be under minimum, then the
 % last segment is max + remaining.
-T = readtable("Y:\Eero\EDF_and_matlab\EPIHFO_start_end_times_badChannels.xlsx");
+
 max_length_mins = 20;
 min_length_mins = 5;
 %%
@@ -23,13 +24,10 @@ diary on;
 for i = 1:length(subj_nums)
     try
         fprintf("Starting subject %d\n",subj_nums(i))
-        data_dir = "Y:\Eero\EDF_and_matlab\Pat" + string(subj_nums(i)) +"\Koko_yo";
+        data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
+        edfFiles = {""}; % automatic selection
 
-        % find the .edf files
-        files = dir(fullfile(data_dir, '*.edf'));
-        edfFiles = string({files.name});
-
-        z = Milja_main_function(subj_nums(i), data_dir, ...
+        z = run_detections(subj_nums(i), data_dir, ...
             edfFiles,max_length_mins, min_length_mins);
         fprintf("Subject %d complete, moving to next subject\n",subj_nums(i))
     catch ME
@@ -41,7 +39,7 @@ end
 fprintf("\nAll subjects analysed! :)\n")
 diary off;
 
-function out = Milja_main_function(subj_num,data_dir,data_files,max_length_mins, min_length_mins)
+function out = run_detections(subj_num,data_dir,data_files,max_length_mins, min_length_mins)
 %
 fprintf(2,'\n======                    Checking data and file directories                    ======\n');
 disp(data_dir)
