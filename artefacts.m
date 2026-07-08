@@ -13,7 +13,7 @@ subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
 % remaining time, but if remaining time would be under minimum, then the
 % last segment is max + remaining.
 
-max_length_mins = 20;
+max_length_mins = 15;
 min_length_mins = 5;
 %%
 logname = sprintf("analysis_log_%s.txt", datestr(now,'yyyymmdd_HHMMSS'));
@@ -42,7 +42,6 @@ diary off;
 function out = run_detections(subj_num,data_dir,data_files,max_length_mins, min_length_mins)
 %
 fprintf(2,'\n======                    Checking data and file directories                    ======\n');
-disp(data_dir)
 if exist(data_dir,"file") > 0  % check if the data directory exists
     F = dir(fullfile(data_dir, "*.edf"));    % list all edf files in the subject's directory
     edf_filename = string({F.name}');        % gather all edf filenames
@@ -75,21 +74,23 @@ else
    error('Data directory does not exist!');
 end
 
-% Define the datetime range as {sleep start, wake up}
+% Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
-T = readtable("Y:\Eero\EDF_and_matlab\EPIHFO_start_end_times_badChannels.xlsx");
-startTime = T.SleepStart(find(T.PatNRo == subj_num));   % adjust index based on the row
-startTime = datestr(startTime, 'HH:MM:SS'); 
-
+T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
+startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
+startTime = datestr(startTime, 'HH:MM:SS');
+hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
+startDate = hdr.StartDate;                              % date of first file (evening or night)
+startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:ss');    % combine date and time
 %startTime = erase(startTime, "(1. filen alku)");  % if needed, remove the parentheses text
 %startTime = datetime(startTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
 
-
-endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % adjust index based on the row
+hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file (morning)
+endDate = hdr.StartDate; 
+endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
 %endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
 endTime = datestr(endTime,'HH:MM:SS');
-%endTime = datetime(endTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
-%endTime = startTime + hours(1);
+endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
 user_datetime_range = { ...
     datestr(startTime, 'dd-mmm-yyyy HH:MM:SS'), ...
     datestr(endTime, 'dd-mmm-yyyy HH:MM:SS') ...
@@ -174,15 +175,16 @@ seizure_time_overflow_end = 0;    % Seizure time overflows ends to the current f
 all_labels    = {};               % Cell array holding the channel labels from all recordings
 all_info      = {};               % Cell array holding the recordings info
 all_rates     = {};               % Cell array holding the rates from all recordings
+all_CNN_durations = [];
 
 % check fs
 file_name = edf_filename(1);
-[EDFhdr, ~] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
-fs = EDFhdr.SamplingRate(1); % get the edf file sampling rate
-
+fs = sampling_rate(1); % get the edf file sampling rate
+fprintf("Sampling frequency is %d Hz\n",fs);
 max_length = max_length_mins*60*fs;            % min x sec x samples
 min_length = min_length_mins*60*fs;
-
+%
+fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
 for file_number = 1:num_edf_files % iteratre through the subject's included files/recordings
     % Logic flages to check if accessing a prior file is needed
@@ -190,38 +192,35 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     looped_already = false;
 
     FR_all = [];
-    FR_artefacts_removed_all = [];
-    FR_seizures_removed_all = [];
     FR_both_removed_all = [];
+    FR_CNN_removed_all = [];
     
     IED_all = [];
-    IED_artefacts_removed_all = [];
-    IED_seizures_removed_all = [];
     IED_both_removed_all = [];
-
+    IED_CNN_removed_all = [];
+    
     R_all = [];
-    R_artefacts_removed_all = [];
-    R_seizures_removed_all = [];
     R_both_removed_all = [];
+    R_CNN_removed_all = [];
     
     GS_all = [];
-    GS_artefacts_removed_all = [];
-    GS_seizures_removed_all = [];
     GS_both_removed_all = [];
-    
+    GS_CNN_removed_all = [];
+
     SFR_original_all = [];
-    SFR_artefacts_removed_all = [];
-    SFR_seizures_removed_all = [];
     SFR_both_removed_all = [];
-    
+    SFR_CNN_removed_all = [];
+        
     SRipples_original_all = [];
-    SRipples_artefacts_removed_all = [];
-    SRipples_seizures_removed_all = [];
-    SRipples_both_removed_all = [];    
+    SRipples_both_removed_all = [];
+    SRipples_CNN_removed_all = [];
 
     duration_artefacts = 0;
     duration_seizures  = 0;
     duration_both = 0;
+    duration_CNN = 0;
+
+    CNN_artifacts_all = []; 
 
     while handle_file
         %% Loading and data extraction from EDF file
@@ -249,7 +248,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         data = uni2bi_montage(data', label); % Convert the data to the bipolar montage (MA updated)
         data_original = data.x_bip;
         % Bad channels from table
-        badchans_raw = T.ChWithArtefacts(find(T.Pat_NRo == subj_num));   % raw cell value
+        badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
         badchans_raw = strtrim(string(badchans_raw));
         if badchans_raw == "-" || badchans_raw == ""
             bad_channel_idx = false(size(bipolar_labels));
@@ -265,7 +264,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
         [seizure_samples, overflow_start, overflow_end] = extract_seizure_locations(events, N, fs, ...
             seizure_time_overflow_start, seizure_time_overflow_end, ...
-            looped_already, sample_window(1,idx), sample_window(2,idx)); % combine artefact and seizure intervals
+            looped_already, sample_window(1,idx), sample_window(2,idx));
+        % combine artefact and seizure intervals
         both_samples = merge_intervals(seizure_samples, artefact_samples);
         % Save seizure time overflows (overflows at start -> Goes to PREVIOUS file)
         seizure_time_overflow_start = overflow_start;
@@ -274,12 +274,42 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         if ~looped_already, seizure_time_overflow_end = overflow_end; end
         % Extract the samples of interest
         sample_window_max = split_windows(sample_window(:,idx), max_length, min_length);
-        duration_original = seconds(end_datetime(idx)-start_datetime(idx));
-
+        duration_original = seconds(end_datetime(idx)-start_datetime(idx)); % in seconds
 
         for s = 1:size(sample_window_max,2)
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
             fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
+            %% Use CNN to find alternative artefacts
+            fprintf(2,"=====    Classify segments using CNN    ======\n")
+    
+            load('convnet.mat') 
+            windowSize = fs*3; % samples per segment 
+            overlap = 0; % 
+            step = windowSize - overlap; 
+            numSegments = floor((size(data.x_bip,1) - windowSize) / step)+1;
+            segment_times = (0:numSegments-1) * (step/fs);
+            [b,a] = butter(3, 900/(0.5*fs), 'low');
+            CNN_artifacts = zeros(numSegments,size(data.x_bip,2));
+         
+            for ch = 1:size(data.x_bip, 2) % loop through channels (158) 
+                signal = data.x_bip(:, ch); 
+                for i = 1:numSegments 
+                    startIdx = (i-1)*step + 1; 
+                    endIdx = startIdx + windowSize - 1;
+                    segment_raw = signal(startIdx:endIdx); 
+                    segment = zeros(5, windowSize); % Lowpass (≤900 Hz) 
+                    segment(1,:) = zscore(filtfilt(b,a,segment_raw)); %Bandpass envelopes 
+                    segment(2,:) = zscore(BpPowerEnvelope(segment_raw, 20, 100, fs)); 
+                    segment(3,:) = zscore(BpPowerEnvelope(segment_raw, 80, 250, fs)); 
+                    segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
+                    segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
+                    img = imresize(segment, convnet.Layers(1).InputSize(1:2)); 
+                    [label,~] = classify(convnet, img); 
+                    switch label 
+                        case 'noise'; CNN_artifacts(i,ch) = 1; 
+                    end
+                end 
+            end
     
             %% Fast ripple detection
            
@@ -296,7 +326,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
            
             %% General spikes detection
             fprintf(2,'\n======                         General spikes detection                         ======\n');
-            settings = '-h 50 -dec 200 -k1 3.65';
+            settings = '-h 50 -dec 200 -b 8';
             Spikes = spike_detector_hilbert_v23(data.x_bip, fs, settings); % detection
             Spikes.pos = Spikes.pos(:).*fs + sample_window_max(1,s);   % start in samples (rounding is removed on purpose)
             Spikes.dur = Spikes.dur(:).*fs;   % duration in samples (rounding is removed on purpose)
@@ -304,164 +334,166 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             IED_all = [IED_all; IED_original];
 
             fprintf('%d original IEDs were detected successfully ...\n', size(IED_original,1));
+           
             %% Milja: Gamma-Spikes testing
             fprintf(2,'\n======                         Gamma-spike detection                         ======\n');
             GammaSpikes = Gamma_detector_new(data.x_bip, IED_original ,fs, sample_window_max(1,s));
             GammaSpikes(:,3) = GammaSpikes(:,3) + sample_window_max(1,s);
             GS_all =  [GS_all; GammaSpikes];
 
-            fprintf('%d original gamma-IEDs were detected successfully ...\n', size(GammaSpikes,1));        
-
+            fprintf('%d original gamma-IEDs were detected successfully ...\n', size(GammaSpikes,1));
+            
             %% Postprocessing
             fprintf(2,'\n======                              Postprocessing                              ======\n');
             % Remove FR segments overlapping with artefact and/or seizure segments
-            FR_artefacts_removed = exclude_samples(FR_original, artefact_samples, 0, 0, 'artefact');
-            FR_artefacts_removed_all = [FR_artefacts_removed_all; FR_artefacts_removed];
-            FR_seizures_removed = exclude_samples(FR_original, seizure_samples , 0, 0, 'seizure');
-            FR_seizures_removed_all = [FR_seizures_removed_all; FR_seizures_removed];
             FR_both_removed = exclude_samples(FR_original, both_samples, 0, 0, 'combined artefact & seizure');
             FR_both_removed_all = [FR_both_removed_all; FR_both_removed];
-
+            FR_seizures_removed = exclude_samples(FR_original, seizure_samples , 0, 0, 'seizure');
+            FR_CNN_removed = exclude_CNN(FR_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
+            FR_CNN_removed_all = [FR_CNN_removed_all; FR_CNN_removed];
+            
             % Remove Spike segments overlapping with artefact and/or seizure segments
-            IED_artefacts_removed = exclude_samples(IED_original, artefact_samples, 0, 0, 'artefact');
-            IED_artefacts_removed_all = [IED_artefacts_removed_all;IED_artefacts_removed];
-            IED_seizures_removed = exclude_samples(IED_original, seizure_samples , 0, 0, 'seizure');
-            IED_seizures_removed_all = [IED_seizures_removed_all;IED_seizures_removed];
             IED_both_removed = exclude_samples(IED_original, both_samples, 0, 0, 'combined artefact & seizure');
             IED_both_removed_all = [IED_both_removed_all;IED_both_removed];
-
+            IED_seizures_removed = exclude_samples(FR_original, seizure_samples , 0, 0, 'seizure');
+            IED_CNN_removed = exclude_CNN(IED_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
+            IED_CNN_removed_all = [IED_CNN_removed_all;IED_CNN_removed];
+          
             % Ripples (Milja)
-            R_artefacts_removed = exclude_samples(R_original, artefact_samples, 0, 0, 'artefact');
-            R_artefacts_removed_all = [R_artefacts_removed_all; R_artefacts_removed];
-            R_seizures_removed = exclude_samples(R_original, seizure_samples , 0, 0, 'seizure');
-            R_seizures_removed_all = [R_seizures_removed_all; R_seizures_removed];
             R_both_removed = exclude_samples(R_original, both_samples, 0, 0, 'combined artefact & seizure');
             R_both_removed_all = [R_both_removed_all; R_both_removed];
+            R_seizures_removed = exclude_samples(R_original, seizure_samples , 0, 0, 'seizure');
+            R_CNN_removed = exclude_CNN(R_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
+            R_CNN_removed_all = [R_CNN_removed_all; R_CNN_removed];
             
             % GammaSpikes
-            GS_artefacts_removed = exclude_samples(GammaSpikes, artefact_samples, 0, 0, 'artefact');
-            GS_artefacts_removed_all = [GS_artefacts_removed_all; GS_artefacts_removed];
-            GS_seizures_removed = exclude_samples(GammaSpikes, seizure_samples , 0, 0, 'seizure');
-            GS_seizures_removed_all = [GS_seizures_removed_all; GS_seizures_removed];
             GS_both_removed = exclude_samples(GammaSpikes, both_samples, 0, 0, 'combined artefact & seizure');
             GS_both_removed_all = [GS_both_removed_all; GS_both_removed];
-
-           
+            GS_seizures_removed = exclude_samples(GammaSpikes, seizure_samples , 0, 0, 'seizure');
+            GS_CNN_removed = exclude_CNN(GammaSpikes, CNN_artifacts, sample_window_max, s,fs);
+            GS_CNN_removed_all = [GS_CNN_removed_all; GS_CNN_removed];
+            
+            
             %% FR-based spikes detection
             fprintf(2,'\n======                         FR-based spikes detection                        ======\n');
             N_buffer = 0.1*fs + 1;  % 100ms buffer
+            
             SFR_original = find_spikes_in_ripples(FR_original, IED_original, N_buffer);
-            SFR_original_all = [SFR_original_all; SFR_original];
-            SFR_artefacts_removed = find_spikes_in_ripples(FR_artefacts_removed, IED_artefacts_removed, N_buffer);
-            SFR_artefacts_removed_all = [SFR_artefacts_removed_all; SFR_artefacts_removed];      
-            SFR_seizures_removed = find_spikes_in_ripples(FR_seizures_removed, IED_seizures_removed, N_buffer);
-            SFR_seizures_removed_all = [SFR_seizures_removed_all; SFR_seizures_removed];            
+            SFR_original_all = [SFR_original_all; SFR_original];     
             SFR_both_removed = find_spikes_in_ripples(FR_both_removed, IED_both_removed, N_buffer);
             SFR_both_removed_all = [SFR_both_removed_all; SFR_both_removed];            
-
-            
+            SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_CNN_removed, N_buffer);
+            SFR_CNN_removed_all = [SFR_CNN_removed_all; SFR_CNN_removed];
+      
             fprintf('%d original SFRs successfully detected...\n', size(SFR_original,1));
-        
-            
+       
             % ==== Ripple-based spikes (Milja) ====
             fprintf(2,'\n====== Ripple-based spikes detection ======\n')
-            
-            SRipples_original = find_spikes_in_ripples(R_original, IED_original, N_buffer);
-            SRipples_original_all = [SRipples_original_all; SRipples_original];         
-            SRipples_artefacts_removed = find_spikes_in_ripples(R_artefacts_removed, IED_artefacts_removed, N_buffer);
-            SRipples_artefacts_removed_all = [SRipples_artefacts_removed_all; SRipples_artefacts_removed];           
-            SRipples_seizures_removed = find_spikes_in_ripples(R_seizures_removed, IED_seizures_removed, N_buffer);
-            SRipples_seizures_removed_all = [SRipples_seizures_removed_all; SRipples_seizures_removed];            
+            SRipples_original = find_spikes_in_ripples(FR_original, IED_original, N_buffer);
+            SRipples_original_all = [SFR_original_all; SFR_original];    
             SRipples_both_removed = find_spikes_in_ripples(R_both_removed, IED_both_removed, N_buffer);
             SRipples_both_removed_all = [SRipples_both_removed_all; SRipples_both_removed];            
-
+            SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_CNN_removed, N_buffer);
+            SRipples_CNN_removed_all = [SRipples_CNN_removed_all; SRipples_CNN_removed];
+            
             fprintf('%d original SRs successfully detected...\n', size(SRipples_original,1));
 
-            % Total duration of analyzed data IN SECONDS
-            duration_artefacts = duration_artefacts + (duration_original - remaining_duration(sample_window_max(:,s)', artefact_samples, duration_original, fs))/60;
-            duration_seizures  = duration_seizures + (duration_original - remaining_duration(sample_window_max(:,s)', seizure_samples, duration_original, fs))/60;
-            duration_both     = duration_both + (duration_original - remaining_duration(sample_window_max(:,s)', both_samples, duration_original, fs))/60;
-    
+            % collect CNN artifacts to matrix, each entry represents 3
+            % seconds
+            CNN_artifacts_all = [CNN_artifacts_all;CNN_artifacts];
+            fprintf(2,"===== Moving to next segment =====\n")
         end
+        fprintf(2,"===== Segments done, calculating the rates =====\n")
+        duration_artefacts = remaining_duration(sample_window, artefact_samples, duration_original, fs);
+        duration_seizures  = remaining_duration(sample_window, seizure_samples, duration_original, fs);
+        duration_both     = remaining_duration(sample_window, both_samples, duration_original, fs);
+       
+
+        % remove seizures from CNN time
+        sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
+        seizure_mask = false(size(sample_wise_artifacts,1),1);
+        for i = 1:size(seizure_samples,1)
+            s = seizure_samples(i,1);
+            e = seizure_samples(i,2);
+            seizure_mask(s:e) = true;
+        end
+        clean_mask = ~sample_wise_artifacts & ~seizure_mask;
+        clean_duration_per_channel = sum(clean_mask, 1) / fs;
+        
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes
-        duration_artefacts_removed = (duration_original -duration_artefacts);
-        duration_seizures_removed  = (duration_original - duration_seizures);
-        duration_both_removed  = (duration_original - duration_both);
-                     
+        duration_original = duration_original/60;
+        duration_artefacts_removed = duration_artefacts/60;
+        duration_seizures_removed  = duration_seizures/60;
+        duration_both_removed  = duration_both/60;
+        duration_CNN_removed = clean_duration_per_channel/60;
+        all_CNN_durations = [all_CNN_durations; duration_CNN_removed];
         % Calculate FR/IED/SFR rates (per second) and percentages of occupancy for each channel
-        FR_appear_rate     = zeros(length(data.lab_bip), 4);
-        R_occupancy_rate  = zeros(length(data.lab_bip), 4);
-        R_appear_rate     = zeros(length(data.lab_bip), 4);
-        FR_occupancy_rate  = zeros(length(data.lab_bip), 4);
-        IED_appear_rate    = zeros(length(data.lab_bip), 4);
-        IED_occupancy_rate = zeros(length(data.lab_bip), 4);
-        SFR_appear_rate    = zeros(length(data.lab_bip), 4);
-        SFR_occupancy_rate = zeros(length(data.lab_bip), 4);
-        SRipples_appear_rate    = zeros(length(data.lab_bip), 4);
-        SRipples_occupancy_rate = zeros(length(data.lab_bip), 4);
-        GS_appear_rate     = zeros(length(data.lab_bip), 4);
-        GS_occupancy_rate  = zeros(length(data.lab_bip), 4);
+        FR_appear_rate     = zeros(length(data.lab_bip), 3);
+        R_occupancy_rate  = zeros(length(data.lab_bip), 3);
+        R_appear_rate     = zeros(length(data.lab_bip), 3);
+        FR_occupancy_rate  = zeros(length(data.lab_bip), 3);
         
+        IED_appear_rate    = zeros(length(data.lab_bip), 3);
+        IED_occupancy_rate = zeros(length(data.lab_bip), 3);
+ 
+        SFR_appear_rate    = zeros(length(data.lab_bip), 3);
+        SFR_occupancy_rate = zeros(length(data.lab_bip), 3);
+
+        SRipples_appear_rate    = zeros(length(data.lab_bip), 3);
+        SRipples_occupancy_rate = zeros(length(data.lab_bip), 3);
+
+        GS_appear_rate     = zeros(length(data.lab_bip), 3);
+        GS_occupancy_rate  = zeros(length(data.lab_bip), 3);
+
         for j = 1:length(data.lab_bip) % iterate through the channels
-            if ~isempty(FR_all); FR_appear_rate(j,1)= sum(FR_all(:,1) == j)/duration_original; else; FR_appear_rate(j,1) = 0; end
-                if ~isempty(FR_artefacts_removed_all); FR_appear_rate(j,2)= sum(FR_artefacts_removed_all(:,1) == j)/duration_artefacts_removed; else; FR_appear_rate(j,2)= 0 ;end
-                if ~isempty(FR_seizures_removed_all);FR_appear_rate(j,3) = sum(FR_seizures_removed_all(:,1) == j)/duration_seizures_removed; else; FR_appear_rate(j,3) = 0; end
-                if ~isempty(FR_both_removed_all);FR_appear_rate(j,4) = sum(FR_both_removed_all(:, 1) == j)/duration_both_removed; else; FR_appear_rate(j,4) = 0; end
-                if ~isempty(FR_all);FR_occupancy_rate(j,1) = (sum(FR_all(FR_all(:,1) == j, 4))/fs)/duration_original;else; FR_occupancy_rate(j,1) = 0; end
-                if ~isempty(FR_artefacts_removed_all);FR_occupancy_rate(j,2)  = (sum(FR_artefacts_removed_all(FR_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else; FR_occupancy_rate(j,2) = 0; end
-                if ~isempty(FR_seizures_removed_all);FR_occupancy_rate(j,3)  = (sum(FR_seizures_removed_all(FR_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else;FR_occupancy_rate(j,3) = 0;  end
-                if ~isempty(FR_both_removed_all);FR_occupancy_rate(j,4)  = (sum(FR_both_removed_all(FR_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else;FR_occupancy_rate(j,4) = 0;  end
-    
-                if ~isempty(R_all);R_appear_rate(j,1)     = sum(R_all(:,1) == j)/duration_original;else;R_appear_rate(j,1) = 0; end
-                if ~isempty(R_artefacts_removed_all);R_appear_rate(j,2) = sum(R_artefacts_removed_all(:,1) == j)/duration_artefacts_removed;else; R_appear_rate(j,2) = 0;end
-                if ~isempty(R_seizures_removed_all);R_appear_rate(j,3) = sum(R_seizures_removed_all(:,1) == j)/duration_seizures_removed;else;R_appear_rate(j,3)=0; end
-                if ~isempty(R_both_removed_all);R_appear_rate(j,4) = sum(R_both_removed_all(:, 1) == j)/duration_both_removed;else;R_appear_rate(j,4)=0; end
-                if ~isempty(R_all);R_occupancy_rate(j,1) = (sum(R_all(R_all(:,1) == j, 4))/fs)/duration_original;else; R_occupancy_rate(j,1)=0;end
-                if ~isempty(R_artefacts_removed_all);R_occupancy_rate(j,2) = (sum(R_artefacts_removed_all(R_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else; R_occupancy_rate(j,2)=0;end
-                if ~isempty(R_seizures_removed_all);R_occupancy_rate(j,3) = (sum(R_seizures_removed_all(R_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else; R_occupancy_rate(j,3)=0;end
-                if ~isempty(R_both_removed_all);R_occupancy_rate(j,4) = (sum(R_both_removed_all(R_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else; R_occupancy_rate(j,4)=0;end    
-                % original IED
-                if ~isempty(IED_all);IED_appear_rate(j,1) = sum(IED_all(:,1) == j)/duration_original;else;IED_appear_rate(j,1)=0; end
-                if ~isempty(IED_artefacts_removed_all);IED_appear_rate(j,2) = sum(IED_artefacts_removed_all(:,1) == j)/duration_artefacts_removed;else; IED_appear_rate(j,2)=0;end
-                if ~isempty(IED_seizures_removed_all);IED_appear_rate(j,3) = sum(IED_seizures_removed_all(:, 1) == j)/duration_seizures_removed;else;IED_appear_rate(j,3)=0; end
-                if ~isempty(IED_both_removed_all);IED_appear_rate(j,4) = sum(IED_both_removed_all(:, 1) == j)/duration_both_removed;else; IED_appear_rate(j,4)=0;end
-                if ~isempty(IED_all);IED_occupancy_rate(j,1) = (sum(IED_all(IED_all(:,1) == j, 4))/fs)/duration_original;else;IED_occupancy_rate(j,1)=0; end
-                if ~isempty(IED_artefacts_removed_all);IED_occupancy_rate(j,2) = (sum(IED_artefacts_removed_all(IED_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else; IED_occupancy_rate(j,2)=0;end
-                if ~isempty(IED_seizures_removed_all);IED_occupancy_rate(j,3) = (sum(IED_seizures_removed_all(IED_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else; IED_occupancy_rate(j,3)=0;end
-                if ~isempty(IED_both_removed_all);IED_occupancy_rate(j,4) = (sum(IED_both_removed_all(IED_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else;IED_occupancy_rate(j,4)=0; end
-    
-                % Spike Fast Ripples
-                if ~isempty(SFR_original_all);SFR_appear_rate(j,1) = sum(SFR_original_all(:,1) == j)/duration_original;else;SFR_appear_rate(j,1)=0; end
-                if ~isempty(SFR_artefacts_removed_all);SFR_appear_rate(j,2) = sum(SFR_artefacts_removed_all(:,1) == j)/duration_artefacts_removed;else; SFR_appear_rate(j,2)=0;end
-                if ~isempty(SFR_seizures_removed_all);SFR_appear_rate(j,3) = sum(SFR_seizures_removed_all(:, 1) == j)/duration_seizures_removed;else; SFR_appear_rate(j,3)=0;end
-                if ~isempty(SFR_both_removed_all);SFR_appear_rate(j,4) = sum(SFR_both_removed_all(:, 1) == j)/duration_both_removed;else;SFR_appear_rate(j,4)=0; end
-                if ~isempty(SFR_original_all);SFR_occupancy_rate(j,1) = (sum(SFR_original_all(SFR_original_all(:,1) == j, 4))/fs)/duration_original;else;SFR_occupancy_rate(j,1)=0; end
-                if ~isempty(SFR_artefacts_removed_all);SFR_occupancy_rate(j,2) = (sum(SFR_artefacts_removed_all(SFR_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else;SFR_occupancy_rate(j,2)=0; end
-                if ~isempty(SFR_seizures_removed_all);SFR_occupancy_rate(j,3) = (sum(SFR_seizures_removed_all(SFR_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else;SFR_occupancy_rate(j,3)=0; end
-                if ~isempty(SFR_both_removed_all);SFR_occupancy_rate(j,4) = (sum(SFR_both_removed_all(SFR_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else;SFR_occupancy_rate(j,4)=0; end
-    
-                % Spike-ripples, Milja
-                if ~isempty(SRipples_original_all);SRipples_appear_rate(j,1) = sum(SRipples_original_all(:,1) == j)/duration_original;else;SRipples_appear_rate(j,1)=0; end
-                if ~isempty(SRipples_artefacts_removed_all);SRipples_appear_rate(j,2) = sum(SRipples_artefacts_removed_all(:,1) == j)/duration_artefacts_removed;else; SRipples_appear_rate(j,2)=0;end
-                if ~isempty(SRipples_seizures_removed_all);SRipples_appear_rate(j,3) = sum(SRipples_seizures_removed_all(:, 1) == j)/duration_seizures_removed;else; SRipples_appear_rate(j,3)=0;end
-                if ~isempty(SRipples_both_removed_all);SRipples_appear_rate(j,4) = sum(SRipples_both_removed_all(:, 1) == j)/duration_both_removed;else; SRipples_appear_rate(j,4)=0;end
-                if ~isempty(SRipples_original_all);SRipples_occupancy_rate(j,1) = (sum(SRipples_original_all(SRipples_original_all(:,1) == j, 4))/fs)/duration_original;else; SRipples_occupancy_rate(j,1)=0;end
-                if ~isempty(SRipples_artefacts_removed_all);SRipples_occupancy_rate(j,2) = (sum(SRipples_artefacts_removed_all(SRipples_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else;SRipples_occupancy_rate(j,2)=0; end
-                if ~isempty(SRipples_seizures_removed_all);SRipples_occupancy_rate(j,3) = (sum(SRipples_seizures_removed_all(SRipples_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else; SRipples_occupancy_rate(j,3)=0;end
-                if ~isempty(SRipples_both_removed_all);SRipples_occupancy_rate(j,4) = (sum(SRipples_both_removed_all(SRipples_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else;SRipples_occupancy_rate(j,4)=0; end
-    
-                % Gamma-spikes, Milja
-                if ~isempty(GS_all);GS_appear_rate(j,1) = sum(GS_all(:,1) == j)/duration_original;else;GS_appear_rate(j,1)=0; end
-                if ~isempty(GS_artefacts_removed_all);GS_appear_rate(j,2) = sum(GS_artefacts_removed_all(:,1) == j)/duration_artefacts_removed;else;GS_appear_rate(j,2)=0; end
-                if ~isempty(GS_seizures_removed_all);GS_appear_rate(j,3) = sum(GS_seizures_removed_all(:, 1) == j)/duration_seizures_removed;else;GS_appear_rate(j,3)=0; end
-                if ~isempty(GS_both_removed_all);GS_appear_rate(j,4) = sum(GS_both_removed_all(:, 1) == j)/duration_both_removed;else; GS_appear_rate(j,4)=0;end
-                if ~isempty(GS_all);GS_occupancy_rate(j,1) = (sum(GS_all(GS_all(:,1) == j, 4))/fs)/duration_original;else; GS_occupancy_rate(j,1)=0;end
-                if ~isempty(GS_artefacts_removed_all);GS_occupancy_rate(j,2) = (sum(GS_artefacts_removed_all(GS_artefacts_removed_all(:,1) == j, 4))/fs)/duration_artefacts_removed;else;GS_occupancy_rate(j,2)=0; end
-                if ~isempty(GS_seizures_removed_all);GS_occupancy_rate(j,3) = (sum(GS_seizures_removed_all(GS_seizures_removed_all(:,1) == j, 4))/fs)/duration_seizures_removed;else; GS_occupancy_rate(j,3)=0;end
-                if ~isempty(GS_both_removed_all);GS_occupancy_rate(j,4) = (sum(GS_both_removed_all(GS_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;else;GS_occupancy_rate(j,4)=0; end
-    
+            FR_appear_rate(j,1)     = sum(FR_all(:,1) == j)/duration_original;
+            FR_appear_rate(j,2)     = sum(FR_both_removed_all(:, 1) == j)/duration_both_removed;
+            FR_appear_rate(j,3)     = sum(FR_CNN_removed_all(:,1) ==j)/ duration_CNN_removed(j);
+            FR_occupancy_rate(j,1)  = (sum(FR_all(FR_all(:,1) == j, 4))/fs)/duration_original;
+            FR_occupancy_rate(j,2)  = (sum(FR_both_removed_all(FR_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            FR_occupancy_rate(j,3)  = (sum(FR_CNN_removed_all(FR_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            R_appear_rate(j,1)     = sum(R_all(:,1) == j)/duration_original;
+            R_appear_rate(j,2)     = sum(R_both_removed_all(:, 1) == j)/duration_both_removed;
+            R_appear_rate(j,3)     = sum(R_CNN_removed_all(:,1) == j)/duration_CNN_removed(j);
+            R_occupancy_rate(j,1)  = (sum(R_all(R_all(:,1) == j, 4))/fs)/duration_original;
+            R_occupancy_rate(j,2)  = (sum(R_both_removed_all(R_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            R_occupancy_rate(j,3)  = (sum(R_CNN_removed_all(R_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % original IED
+            IED_appear_rate(j,1)    = sum(IED_all(:,1) == j)/duration_original; 
+            IED_appear_rate(j,2)    = sum(IED_both_removed_all(:, 1) == j)/duration_both_removed;
+            IED_appear_rate(j,3)    = sum(IED_CNN_removed_all(:,1) == j)/duration_CNN_removed(j);
+            IED_occupancy_rate(j,1) = (sum(IED_all(IED_all(:,1) == j, 4))/fs)/duration_original;
+            IED_occupancy_rate(j,2) = (sum(IED_both_removed_all(IED_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            IED_occupancy_rate(j,3) = (sum(IED_CNN_removed_all(IED_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % Spike Fast Ripples
+            SFR_appear_rate(j,1)    = sum(SFR_original_all(:,1) == j)/duration_original;
+            SFR_appear_rate(j,2)    = sum(SFR_both_removed_all(:, 1) == j)/duration_both_removed;
+            SFR_appear_rate(j,3)    = sum(SFR_CNN_removed_all(:,1) == j)/duration_CNN_removed(j);
+            SFR_occupancy_rate(j,1) = (sum(SFR_original_all(SFR_original_all(:,1) == j, 4))/fs)/duration_original;
+            SFR_occupancy_rate(j,2) = (sum(SFR_both_removed_all(SFR_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            SFR_occupancy_rate(j,3) = (sum(SFR_CNN_removed_all(SFR_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % Spike-ripples, Milja
+            SRipples_appear_rate(j,1)    = sum(SRipples_original_all(:,1) == j)/duration_original;
+            SRipples_appear_rate(j,2)    = sum(SRipples_both_removed_all(:, 1) == j)/duration_both_removed;
+            SRipples_appear_rate(j,3)    = sum(SRipples_CNN_removed_all(:,1) == j)/duration_CNN_removed(j);
+            SRipples_occupancy_rate(j,1) = (sum(SRipples_original_all(SRipples_original_all(:,1) == j, 4))/fs)/duration_original;
+            SRipples_occupancy_rate(j,2) = (sum(SRipples_both_removed_all(SRipples_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            SRipples_occupancy_rate(j,3) = (sum(SRipples_CNN_removed_all(SRipples_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % Gamma-spikes, Milja
+            GS_appear_rate(j,1)    = sum(GS_all(:,1) == j)/duration_original;
+            GS_appear_rate(j,2)    = sum(GS_both_removed_all(:, 1) == j)/duration_both_removed;
+            GS_appear_rate(j,3)    = sum(GS_CNN_removed_all(:,1) == j)/duration_CNN_removed(j);
+            GS_occupancy_rate(j,1) = (sum(GS_all(GS_all(:,1) == j, 4))/fs)/duration_original;
+            GS_occupancy_rate(j,2) = (sum(GS_both_removed_all(GS_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
+            GS_occupancy_rate(j,3) = (sum(GS_CNN_removed_all(GS_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
         end
         % Make sure that nan entries (duration = 0) are zero
         FR_appear_rate(isnan(FR_appear_rate)) = 0;
@@ -478,22 +510,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         SRipples_occupancy_rate(isnan(SRipples_occupancy_rate)) = 0;
         GS_occupancy_rate(isnan(GS_occupancy_rate)) = 0;
 
-        % Convert durations and rates units to be in minutes
-        FR_appear_rate  = 60.*FR_appear_rate;
-        R_appear_rate = 60.*R_appear_rate;
-        IED_appear_rate = 60.*IED_appear_rate;
-        SFR_appear_rate = 60.*SFR_appear_rate;
-        SRipples_appear_rate = 60.*SRipples_appear_rate;
-        GS_appear_rate = 60.*GS_appear_rate;
-
-
-        duration_original = duration_original/60;
-        duration_artefacts_removed = duration_artefacts_removed/60;
-        duration_seizures_removed = duration_seizures_removed/60;
-        duration_both_removed = duration_both_removed/60;
         disp("Total duration in minutes without anything removed: " + string(duration_original));
-        disp("Total duration in minutes with artefacts removed: " + string(duration_artefacts_removed));
-        disp("Total duration in minutes with seizures removed: " + string(duration_seizures_removed));
         disp("Total duration in minutes with both artefacts and seizures removed: " + string(duration_both_removed));
 
         % Convert occupancy to percentages
@@ -503,6 +520,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         SFR_occupancy_rate = 60.*SFR_occupancy_rate;
         SRipples_occupancy_rate = 60.*SRipples_occupancy_rate;
         GS_occupancy_rate = 60.*GS_occupancy_rate;
+
 
         %% Mark bad channels by annotations as NaN for columns 1-4
         %{
@@ -524,30 +542,23 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         fprintf(2,'\n======               Save detections for file "%s"              ======\n', file_name);
         matfile = fullfile(data_dir, string(erase(file_name, ".edf")) + "_detections");
         FR_detections.original = FR_original;
-        FR_detections.artefacts_removed = FR_artefacts_removed;
-        FR_detections.seizures_removed = FR_seizures_removed;
         FR_detections.both_removed = FR_both_removed;
+        
         R_detections.original = R_original;
-        R_detections.artefacts_removed = R_artefacts_removed;
-        R_detections.seizures_removed = R_seizures_removed;
         R_detections.both_removed = R_both_removed;
+        
         IED_detections.original = IED_original;
-        IED_detections.artefacts_removed = IED_artefacts_removed;
-        IED_detections.seizures_removed = IED_seizures_removed;
         IED_detections.both_removed = IED_both_removed;
+
         SFR_detections.original = SFR_original;
-        SFR_detections.artefacts_removed = SFR_artefacts_removed;
-        SFR_detections.seizures_removed = SFR_seizures_removed;
         SFR_detections.both_removed = SFR_both_removed;
-        % Milja:
+
         SRipples_detections.original = SRipples_original;
-        SRipples_detections.artefacts_removed = SRipples_artefacts_removed;
-        SRipples_detections.seizures_removed = SRipples_seizures_removed;
         SRipples_detections.both_removed = SRipples_both_removed;
+
         GS_detections.original = GammaSpikes;
-        GS_detections.artefacts_removed = GS_artefacts_removed;
-        GS_detections.seizures_removed = GS_seizures_removed;
         GS_detections.both_removed = GS_both_removed;
+   
 
         Duration_min.original = duration_original;
         Duration_min.artefacts_removed = duration_artefacts_removed;
@@ -562,7 +573,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
         %% Export summary results to an Excel file
         fprintf(2,'\n======                Export rates for file "%s"                ======\n', file_name);
-        excelfile = fullfile(data_dir, "full_night_detection_rates_pat" + subj_num + ".xls");
+        excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xls");
         % if idx == 1 && exist(excelfile,'file') > 0, delete(excelfile); end % check if an older excel file exists and delete it
         sheet_name = string(erase(file_name, ".edf"));
         % Write the file/signal information
@@ -570,52 +581,51 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         info{2,1} = string(start_datetime(idx));
         info{3,1} = string(end_datetime(idx));
         info{4,1} = duration_original;
-        info{5,1} = duration_artefacts_removed;
-        info{6,1} = duration_seizures_removed;
-        info{7,1} = duration_both_removed;
+        info{5,1} = duration_both_removed;
+        info{6,1} = mean(duration_CNN_removed);
         writecell({'File:';'Time start:';'Time end:';'Original duration (min):'; ...
-            'Duration with artefacts removed (min):';'Duration with seizures removed (min):'; ...
-            'Duration with both removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
+            'Duration with manual artefacts removed (min):';'Average duration with CNN artefacts removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
         writecell(info,excelfile,'Sheet',sheet_name,'Range','B1');
         % Write the channel numbers and labels
         writematrix((1:length(data.lab_bip))',excelfile,'Sheet',sheet_name,'Range','A11');
         writematrix(data.lab_bip,excelfile,'Sheet',sheet_name,'Range','B11');
         writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
+        writematrix(duration_CNN_removed', excelfile,'Sheet',sheet_name,'Range','D11')
         % Write column headers
         main_hdr = {
-            'FR rate (1/min)', '', '', '';
-            'R rate (1/min)', '', '', '';
-            'IED rate (1/min)', '', '', '';     
-            'SFR rate (1/min)', '', '', '';
-            'SRipple rate (1/min)', '', '', '';
-            'GS rate (1/min)', '', '', '';
+            'FR rate (1/min)', '', '';
+            'R rate (1/min)', '', '';
+            'IED rate (1/min)', '', '';
+            'SFR rate (1/min)', '', '';
+            'SRipple rate (1/min)', '', '';
+            'GS rate (1/min)', '', '';
 
-            'FR occupancy (%)', '', '', '';
-            'R occupancy (%)', '', '', '';
-            'IED occupancy (%)', '', '', '';
-            'SFR occupancy (%)', '', '', '';
-            'SRipple occupancy (%)', '', '', '';
-            'GS occupancy (%)', '', '', '';
+            'FR occupancy (%)', '', '';
+            'R occupancy (%)', '', '';
+            'IED occupancy (%)', '', '';
+            'SFR occupancy (%)', '', '';
+            'SRipple occupancy (%)', '', '';
+            'GS occupancy (%)', '', '';
             };
-        sub_block = {'Original','Artefacts removed','Seizures removed','Both removed'};
-        sub_hdr = [{'Channel number','Label','Bad channel'} repmat(sub_block, 1, 12)];
+        sub_block = {'Original','Manual','CNN'};
+        sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
-        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','D9');
+        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
         writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
         % Write the rates and percentages of occupancy
-        writematrix(FR_appear_rate,        excelfile,'Sheet',sheet_name,'Range','D11');
+        writematrix(FR_appear_rate,        excelfile,'Sheet',sheet_name,'Range','E11');
         writematrix(R_appear_rate,         excelfile,'Sheet',sheet_name,'Range','H11');
-        writematrix(IED_appear_rate,       excelfile,'Sheet',sheet_name,'Range','L11');
-        writematrix(SFR_appear_rate,       excelfile,'Sheet',sheet_name,'Range','P11');
-        writematrix(SRipples_appear_rate,  excelfile,'Sheet',sheet_name,'Range','T11');
-        writematrix(GS_appear_rate,        excelfile,'Sheet',sheet_name,'Range','X11');
+        writematrix(IED_appear_rate,       excelfile,'Sheet',sheet_name,'Range','K11');
+        writematrix(SFR_appear_rate,       excelfile,'Sheet',sheet_name,'Range','N11');
+        writematrix(SRipples_appear_rate,  excelfile,'Sheet',sheet_name,'Range','Q11');
+        writematrix(GS_appear_rate,        excelfile,'Sheet',sheet_name,'Range','T11');
         
-        writematrix(FR_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','AB11');
-        writematrix(R_occupancy_rate,         excelfile,'Sheet',sheet_name,'Range','AF11');
-        writematrix(IED_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AJ11');
-        writematrix(SFR_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AN11');
-        writematrix(SRipples_occupancy_rate,  excelfile,'Sheet',sheet_name,'Range','AR11');
-        writematrix(GS_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','AV11');
+        writematrix(FR_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','W11');
+        writematrix(R_occupancy_rate,         excelfile,'Sheet',sheet_name,'Range','Z11');
+        writematrix(IED_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AC11');
+        writematrix(SFR_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AF11');
+        writematrix(SRipples_occupancy_rate,  excelfile,'Sheet',sheet_name,'Range','AI11');
+        writematrix(GS_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','AL11');
 
         %% Gather file information from the subject's records
         % Save necessary information for combined file statistics
@@ -656,7 +666,7 @@ common_values = zeros(length(common_labels),size(all_rates{1},2));
 all_durations = 0;
 for i = 1:length(all_labels)
     [~, label_idx]  = ismember(common_labels, all_labels{i});
-    durations_bloc = repmat(cell2mat(all_info{i}(4:end)),length(common_labels),1);
+    durations_bloc = [repmat(cell2mat(all_info{i}(4:5)),length(common_labels),1),all_CNN_durations(i,:)'];
     dur_matrix = repmat(durations_bloc, 1, 12);
     temp = all_rates{i}(label_idx,:).*dur_matrix;
     common_values = common_values + temp;
@@ -666,7 +676,7 @@ common_values = common_values./all_durations;
 
 % Export the combined results to a separate Excel sheet
 fprintf(2,'\n======           Export combined rates for file "%s"            ======\n', file_name);
-excelfile = fullfile(data_dir, "full_night_detection_rates_pat" + subj_num + ".xls");
+excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xls");
 sheet_name = "files combined";
 % Write the subject information
 all_start_times = cellfun(@(x) x{2}, all_info);
@@ -679,38 +689,37 @@ mf_info{5,1} = all_durations(2);
 mf_info{6,1} = all_durations(3);
 mf_info{7,1} = all_durations(4);
 writecell({'File:';'Time start:';'Time end:';'Original duration (min):'; ...
-    'Duration with artefacts removed (min):';'Duration with seizures removed (min):'; ...
-    'Duration with both removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
+            'Duration with manual artefacts removed (min):';'Average duration with CNN artefacts removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
 writecell(mf_info,excelfile,'Sheet',sheet_name,'Range','B1');
 % Write the common channel numbers and labels
 writematrix((1:length(common_labels))',excelfile,'Sheet',sheet_name,'Range','A11');
 writematrix(common_labels,excelfile,'Sheet',sheet_name,'Range','B11');
 % Write column headers
 main_hdr = {
-            'FR rate (1/min)', '', '', '', '';
-            'R rate (1/min)', '', '', '', '';
-            'IED rate (1/min)', '', '', '', '';
-            'SFR rate (1/min)', '', '', '', '';
-            'SRipple rate (1/min)', '', '', '', '';
-            'GS rate (1/min)', '', '', '', '';
+            'FR rate (1/min)', '', '';
+            'R rate (1/min)', '', '';
+            'IED rate (1/min)', '', '';
+            'SFR rate (1/min)', '', '';
+            'SRipple rate (1/min)', '', '';
+            'GS rate (1/min)', '', '';
 
-            'FR occupancy (%)', '', '', '', '';
-            'R occupancy (%)', '', '', '', '';
-            'IED occupancy (%)', '', '', '', '';
-            'SFR occupancy (%)', '', '', '', '';
-            'SRipple occupancy (%)', '', '', '', '';
-            'GS occupancy (%)', '', '', '', '';
+            'FR occupancy (%)', '', '';
+            'R occupancy (%)', '', '';
+            'IED occupancy (%)', '', '';
+            'SFR occupancy (%)', '', '';
+            'SRipple occupancy (%)', '', '';
+            'GS occupancy (%)', '', '';
             };
-sub_block = {'Original','Artefacts removed','Seizures removed','Both removed'};
-sub_hdr = [{'Channel number','Label','Bad channel'} repmat(sub_block, 1, 20)];
+sub_block = {'Original','Manual','CNN'};
+sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
-writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','D9');
+writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
 writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
 writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
-
+writematrix(sum(all_CNN_durations,1)', excelfile,'Sheet',sheet_name,'Range','D11')
 
 % Write the combined FR/IED/SFR rates and percentages of occupancy
-writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','D11');
+writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','E11');
 fprintf('Sheet "%s" in File "%s" is saved successfully ...\n\n', sheet_name, "detection_rates_pat" + subj_num + ".xls");
 out = "The program has finished";
 end
