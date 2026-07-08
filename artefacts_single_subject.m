@@ -357,7 +357,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_CNN_removed, N_buffer);
             SFR_CNN_removed_all = [SFR_CNN_removed_all; SFR_CNN_removed];
       
-            
+            fprintf('%d original SFRs successfully detected...\n', size(SFR_original,1));
        
             % ==== Ripple-based spikes (Milja) ====
             fprintf(2,'\n====== Ripple-based spikes detection ======\n')
@@ -373,10 +373,13 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             % collect CNN artifacts to matrix, each entry represents 3
             % seconds
             CNN_artifacts_all = [CNN_artifacts_all;CNN_artifacts];
+            fprintf(2,"===== Moving to next segment =====\n")
         end
+        fprintf(2,"===== Segments done, calculating the rates =====\n")
         duration_artefacts = remaining_duration(sample_window, artefact_samples, duration_original, fs);
         duration_seizures  = remaining_duration(sample_window, seizure_samples, duration_original, fs);
         duration_both     = remaining_duration(sample_window, both_samples, duration_original, fs);
+       
 
         % remove seizures from CNN time
         sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
@@ -392,6 +395,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes
+        duration_original = duration_original/60;
         duration_artefacts_removed = duration_artefacts/60;
         duration_seizures_removed  = duration_seizures/60;
         duration_both_removed  = duration_both/60;
@@ -477,16 +481,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         SFR_occupancy_rate(isnan(SFR_occupancy_rate)) = 0;
         SRipples_occupancy_rate(isnan(SRipples_occupancy_rate)) = 0;
         GS_occupancy_rate(isnan(GS_occupancy_rate)) = 0;
-
-        % Convert durations and rates units to be in minutes
-        FR_appear_rate  = 60.*FR_appear_rate;
-        R_appear_rate = 60.*R_appear_rate;
-        IED_appear_rate = 60.*IED_appear_rate;
-        SFR_appear_rate = 60.*SFR_appear_rate;
-        SRipples_appear_rate = 60.*SRipples_appear_rate;
-        GS_appear_rate = 60.*GS_appear_rate;
-
-        duration_original = duration_original/60;
 
         disp("Total duration in minutes without anything removed: " + string(duration_original));
         disp("Total duration in minutes with both artefacts and seizures removed: " + string(duration_both_removed));
@@ -644,7 +638,7 @@ common_values = zeros(length(common_labels),size(all_rates{1},2));
 all_durations = 0;
 for i = 1:length(all_labels)
     [~, label_idx]  = ismember(common_labels, all_labels{i});
-    durations_bloc = [repmat(cell2mat(all_info{i}(4:5)),length(common_labels),1),all_CNN_durations(i,:)'/60];
+    durations_bloc = [repmat(cell2mat(all_info{i}(4:5)),length(common_labels),1),all_CNN_durations(i,:)'];
     dur_matrix = repmat(durations_bloc, 1, 12);
     temp = all_rates{i}(label_idx,:).*dur_matrix;
     common_values = common_values + temp;
