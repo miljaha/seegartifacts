@@ -58,8 +58,8 @@ startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:s
 
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file (morning)
 endDate = hdr.StartDate; 
-%endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
-endTime = "2:10";
+endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
+endTime = "2:00";
 %endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
 endTime = datestr(endTime,'HH:MM:SS');
 endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
@@ -155,7 +155,7 @@ fs = sampling_rate(1); % get the edf file sampling rate
 fprintf("Sampling frequency is %d Hz\n",fs);
 max_length = 15*60*fs;            % min x sec x samples
 min_length = 5*60*fs;
-
+%
 fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
 for file_number = 1:num_edf_files % iteratre through the subject's included files/recordings
@@ -191,6 +191,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     duration_seizures  = 0;
     duration_both = 0;
     duration_CNN = 0;
+
+    CNN_artifacts_all = []; 
 
     while handle_file
         %% Loading and data extraction from EDF file
@@ -244,8 +246,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         if ~looped_already, seizure_time_overflow_end = overflow_end; end
         % Extract the samples of interest
         sample_window_max = split_windows(sample_window(:,idx), max_length, min_length);
-        duration_original = seconds(end_datetime(idx)-start_datetime(idx));
-
+        duration_original = seconds(end_datetime(idx)-start_datetime(idx)); % in seconds
 
         for s = 1:size(sample_window_max,2)
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
@@ -369,14 +370,16 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             
             fprintf('%d original SRs successfully detected...\n', size(SRipples_original,1));
 
-            % Total duration of analyzed data IN SECONDS
-            duration_artefacts = duration_artefacts + (duration_original - remaining_duration(sample_window_max(:,s)', artefact_samples, duration_original, fs));
-            duration_seizures  = duration_seizures + (duration_original - remaining_duration(sample_window_max(:,s)', seizure_samples, duration_original, fs));
-            duration_both     = duration_both + (duration_original - remaining_duration(sample_window_max(:,s)', both_samples, duration_original, fs));
-            duration_CNN = duration_CNN + (sum(CNN_artifacts,1)*3);
+            % collect CNN artifacts to matrix, each entry represents 3
+            % seconds
+            CNN_artifacts_all = [CNN_artifacts_all;CNN_artifacts];
         end
+        duration_artefacts = remaining_duration(sample_window, artefact_samples, duration_original, fs);
+        duration_seizures  = remaining_duration(sample_window, seizure_samples, duration_original, fs);
+        duration_both     = remaining_duration(sample_window, both_samples, duration_original, fs);
+
         % remove seizures from CNN time
-        sample_wise_artifacts = repelem(CNN_artifacts, windowSize, 1);
+        sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
         seizure_mask = false(size(sample_wise_artifacts,1),1);
         for i = 1:size(seizure_samples,1)
             s = seizure_samples(i,1);
@@ -389,12 +392,11 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes
-        duration_artefacts_removed = (duration_original -duration_artefacts)/60;
-        duration_seizures_removed  = (duration_original - duration_seizures)/60;
-        duration_both_removed  = (duration_original - duration_both)/60;
+        duration_artefacts_removed = duration_artefacts/60;
+        duration_seizures_removed  = duration_seizures/60;
+        duration_both_removed  = duration_both/60;
         duration_CNN_removed = clean_duration_per_channel/60;
         all_CNN_durations = [all_CNN_durations; duration_CNN_removed];
-
         % Calculate FR/IED/SFR rates (per second) and percentages of occupancy for each channel
         FR_appear_rate     = zeros(length(data.lab_bip), 3);
         R_occupancy_rate  = zeros(length(data.lab_bip), 3);
@@ -557,12 +559,10 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         info{2,1} = string(start_datetime(idx));
         info{3,1} = string(end_datetime(idx));
         info{4,1} = duration_original;
-        info{5,1} = duration_artefacts_removed;
-        info{6,1} = duration_seizures_removed;
-        info{7,1} = duration_both_removed;
+        info{5,1} = duration_both_removed;
+        info{6,1} = mean(duration_CNN_removed);
         writecell({'File:';'Time start:';'Time end:';'Original duration (min):'; ...
-            'Duration with artefacts removed (min):';'Duration with seizures removed (min):'; ...
-            'Duration with both removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
+            'Duration with manual artefacts removed (min):';'Average duration with CNN artefacts removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
         writecell(info,excelfile,'Sheet',sheet_name,'Range','B1');
         % Write the channel numbers and labels
         writematrix((1:length(data.lab_bip))',excelfile,'Sheet',sheet_name,'Range','A11');
@@ -571,39 +571,39 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         writematrix(duration_CNN_removed', excelfile,'Sheet',sheet_name,'Range','D11')
         % Write column headers
         main_hdr = {
-            'FR rate (1/min)', '', '', '', '';
-            'R rate (1/min)', '', '', '', '';
-            'IED rate (1/min)', '', '', '', '';
-            'SFR rate (1/min)', '', '', '', '';
-            'SRipple rate (1/min)', '', '', '', '';
-            'GS rate (1/min)', '', '', '', '';
+            'FR rate (1/min)', '', '';
+            'R rate (1/min)', '', '';
+            'IED rate (1/min)', '', '';
+            'SFR rate (1/min)', '', '';
+            'SRipple rate (1/min)', '', '';
+            'GS rate (1/min)', '', '';
 
-            'FR occupancy (%)', '', '', '', '';
-            'R occupancy (%)', '', '', '', '';
-            'IED occupancy (%)', '', '', '', '';
-            'SFR occupancy (%)', '', '', '', '';
-            'SRipple occupancy (%)', '', '', '', '';
-            'GS occupancy (%)', '', '', '', '';
+            'FR occupancy (%)', '', '';
+            'R occupancy (%)', '', '';
+            'IED occupancy (%)', '', '';
+            'SFR occupancy (%)', '', '';
+            'SRipple occupancy (%)', '', '';
+            'GS occupancy (%)', '', '';
             };
         sub_block = {'Original','Manual','CNN'};
-        sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 20)];
+        sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
         writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
         writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
         % Write the rates and percentages of occupancy
         writematrix(FR_appear_rate,        excelfile,'Sheet',sheet_name,'Range','E11');
-        writematrix(R_appear_rate,         excelfile,'Sheet',sheet_name,'Range','J11');
-        writematrix(IED_appear_rate,       excelfile,'Sheet',sheet_name,'Range','O11');
-        writematrix(SFR_appear_rate,       excelfile,'Sheet',sheet_name,'Range','U11');
-        writematrix(SRipples_appear_rate,  excelfile,'Sheet',sheet_name,'Range','AI11');
-        writematrix(GS_appear_rate,        excelfile,'Sheet',sheet_name,'Range','AS11');
+        writematrix(R_appear_rate,         excelfile,'Sheet',sheet_name,'Range','H11');
+        writematrix(IED_appear_rate,       excelfile,'Sheet',sheet_name,'Range','K11');
+        writematrix(SFR_appear_rate,       excelfile,'Sheet',sheet_name,'Range','N11');
+        writematrix(SRipples_appear_rate,  excelfile,'Sheet',sheet_name,'Range','Q11');
+        writematrix(GS_appear_rate,        excelfile,'Sheet',sheet_name,'Range','T11');
         
-        writematrix(FR_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','BC11');
-        writematrix(R_occupancy_rate,         excelfile,'Sheet',sheet_name,'Range','BH11');
-        writematrix(IED_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','BM11');
-        writematrix(SFR_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','BW11');
-        writematrix(SRipples_occupancy_rate,  excelfile,'Sheet',sheet_name,'Range','CG11');
-        writematrix(GS_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','CQ11');
+        writematrix(FR_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','W11');
+        writematrix(R_occupancy_rate,         excelfile,'Sheet',sheet_name,'Range','Z11');
+        writematrix(IED_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AC11');
+        writematrix(SFR_occupancy_rate,       excelfile,'Sheet',sheet_name,'Range','AF11');
+        writematrix(SRipples_occupancy_rate,  excelfile,'Sheet',sheet_name,'Range','AI11');
+        writematrix(GS_occupancy_rate,        excelfile,'Sheet',sheet_name,'Range','AL11');
 
         %% Gather file information from the subject's records
         % Save necessary information for combined file statistics
@@ -644,8 +644,8 @@ common_values = zeros(length(common_labels),size(all_rates{1},2));
 all_durations = 0;
 for i = 1:length(all_labels)
     [~, label_idx]  = ismember(common_labels, all_labels{i});
-    durations_bloc = [repmat(cell2mat(all_info{i}(4:end)),length(common_labels),1),all_CNN_durations(i,:)'/60];
-    dur_matrix = repmat(durations_bloc, 1, 20);
+    durations_bloc = [repmat(cell2mat(all_info{i}(4:5)),length(common_labels),1),all_CNN_durations(i,:)'/60];
+    dur_matrix = repmat(durations_bloc, 1, 12);
     temp = all_rates{i}(label_idx,:).*dur_matrix;
     common_values = common_values + temp;
     all_durations = all_durations + dur_matrix(1,:);
@@ -667,30 +667,29 @@ mf_info{5,1} = all_durations(2);
 mf_info{6,1} = all_durations(3);
 mf_info{7,1} = all_durations(4);
 writecell({'File:';'Time start:';'Time end:';'Original duration (min):'; ...
-    'Duration with artefacts removed (min):';'Duration with seizures removed (min):'; ...
-    'Duration with both removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
+            'Duration with manual artefacts removed (min):';'Average duration with CNN artefacts removed (min):'},excelfile,'Sheet',sheet_name,'Range','A1');
 writecell(mf_info,excelfile,'Sheet',sheet_name,'Range','B1');
 % Write the common channel numbers and labels
 writematrix((1:length(common_labels))',excelfile,'Sheet',sheet_name,'Range','A11');
 writematrix(common_labels,excelfile,'Sheet',sheet_name,'Range','B11');
 % Write column headers
 main_hdr = {
-            'FR rate (1/min)', '', '', '', '';
-            'R rate (1/min)', '', '', '', '';
-            'IED rate (1/min)', '', '', '', '';
-            'SFR rate (1/min)', '', '', '', '';
-            'SRipple rate (1/min)', '', '', '', '';
-            'GS rate (1/min)', '', '', '', '';
+            'FR rate (1/min)', '', '';
+            'R rate (1/min)', '', '';
+            'IED rate (1/min)', '', '';
+            'SFR rate (1/min)', '', '';
+            'SRipple rate (1/min)', '', '';
+            'GS rate (1/min)', '', '';
 
-            'FR occupancy (%)', '', '', '', '';
-            'R occupancy (%)', '', '', '', '';
-            'IED occupancy (%)', '', '', '', '';
-            'SFR occupancy (%)', '', '', '', '';
-            'SRipple occupancy (%)', '', '', '', '';
-            'GS occupancy (%)', '', '', '', '';
+            'FR occupancy (%)', '', '';
+            'R occupancy (%)', '', '';
+            'IED occupancy (%)', '', '';
+            'SFR occupancy (%)', '', '';
+            'SRipple occupancy (%)', '', '';
+            'GS occupancy (%)', '', '';
             };
-sub_block = {'Original','Artefacts removed','Seizures removed','Both removed','CNN'};
-sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 20)];
+sub_block = {'Original','Manual','CNN'};
+sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
 writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
 writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
