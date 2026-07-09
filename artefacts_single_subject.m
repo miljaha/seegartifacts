@@ -4,7 +4,7 @@ addpath(genpath('Functions'));
 
 %% Single-Subject Utility
 % Input Parameters
-subj_num = 19; % subject number
+subj_num = 12; % subject number
 % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
 data_files = {""}; % if empty it evokes automatic data file selection
 % Function calling
@@ -59,7 +59,6 @@ startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:s
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file (morning)
 endDate = hdr.StartDate; 
 endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
-endTime = "2:00";
 %endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
 endTime = datestr(endTime,'HH:MM:SS');
 endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
@@ -327,7 +326,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             % Remove Spike segments overlapping with artefact and/or seizure segments
             IED_both_removed = exclude_samples(IED_original, both_samples, 0, 0, 'combined artefact & seizure');
             IED_both_removed_all = [IED_both_removed_all;IED_both_removed];
-            IED_seizures_removed = exclude_samples(FR_original, seizure_samples , 0, 0, 'seizure');
+            IED_seizures_removed = exclude_samples(IED_original, seizure_samples , 0, 0, 'seizure');
             IED_CNN_removed = exclude_CNN(IED_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
             IED_CNN_removed_all = [IED_CNN_removed_all;IED_CNN_removed];
           
@@ -361,8 +360,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
        
             % ==== Ripple-based spikes (Milja) ====
             fprintf(2,'\n====== Ripple-based spikes detection ======\n')
-            SRipples_original = find_spikes_in_ripples(FR_original, IED_original, N_buffer);
-            SRipples_original_all = [SFR_original_all; SFR_original];    
+            SRipples_original = find_spikes_in_ripples(R_original, IED_original, N_buffer);
+            SRipples_original_all = [SRipples_original_all; SRipples_original];    
             SRipples_both_removed = find_spikes_in_ripples(R_both_removed, IED_both_removed, N_buffer);
             SRipples_both_removed_all = [SRipples_both_removed_all; SRipples_both_removed];            
             SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_CNN_removed, N_buffer);
