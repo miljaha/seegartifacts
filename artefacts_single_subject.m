@@ -4,7 +4,7 @@ addpath(genpath('Functions'));
 
 %% Single-Subject Utility
 % Input Parameters
-subj_num = 12; % subject number
+subj_num = 27; % subject number
 % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
 data_files = {""}; % if empty it evokes automatic data file selection
 % Function calling
@@ -378,7 +378,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         duration_artefacts = remaining_duration(sample_window, artefact_samples, duration_original, fs);
         duration_seizures  = remaining_duration(sample_window, seizure_samples, duration_original, fs);
         duration_both     = remaining_duration(sample_window, both_samples, duration_original, fs);
-       
 
         % remove seizures from CNN time
         sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
@@ -388,9 +387,10 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             e = seizure_samples(i,2);
             seizure_mask(s:e) = true;
         end
+        sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
         clean_mask = ~sample_wise_artifacts & ~seizure_mask;
         clean_duration_per_channel = sum(clean_mask, 1) / fs;
-        
+
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes

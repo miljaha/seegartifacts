@@ -2,10 +2,10 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
-32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,52,53,56,58,59,60];         % Subject number
+subj_nums = [50,52,53,56,58,59,60];         % Subject number
 % 51, 54, 55 ja 57 odottaa Päivin merkintöjä
-% 12, 19 done
+% [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48]
+% done
 
 % Maximum and minumum length of data procesed at once. You can edit these
 % depending on the computer you use, longer max length of segment makes the
@@ -408,7 +408,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         duration_artefacts = remaining_duration(sample_window, artefact_samples, duration_original, fs);
         duration_seizures  = remaining_duration(sample_window, seizure_samples, duration_original, fs);
         duration_both     = remaining_duration(sample_window, both_samples, duration_original, fs);
-       
 
         % remove seizures from CNN time
         sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
@@ -418,9 +417,9 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             e = seizure_samples(i,2);
             seizure_mask(s:e) = true;
         end
+        sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
         clean_mask = ~sample_wise_artifacts & ~seizure_mask;
         clean_duration_per_channel = sum(clean_mask, 1) / fs;
-        
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes
