@@ -66,11 +66,18 @@ results_patients = cell(nValid+1, nBiomarkers+1);
 results_patients(2:nValid+1,1) = num2cell(valid_subjs);
 results_patients(1,2:nBiomarkers+1) = biomarkers;
 difference = results_patients;
+quotas = zeros(nBiomarkers,1);
+diffs_all = [];
 for b = 1:nBiomarkers
     col_man = All_channels{:,(b-1)*3+2};     % Manual artefacts
     col_cnn = All_channels{:,(b-1)*3+3};        % CNN artef acts removed
     
     diff = col_man - col_cnn; % calculate difference
+    diffs_all = [diffs_all, diff];
+    % how often is the difference over 5 %?
+    perc = col_cnn ./ col_man;
+    under5p = sum(perc >= 0.90 & perc <= 1.1);
+    quotas(b) = under5p ./ length(col_man) * 100;
     medians = zeros(nValid,1);
 
     % equivalence test TOST
@@ -101,10 +108,15 @@ for b = 1:nBiomarkers
     results(b,:) = {biomarkers(b), median(diff,'omitnan'), ci, is_equivalent1, is_equivalent2};
 end
 
+%% plot histograms of differences
+nChannels = size(diffs_all,1);
 figure;
-imagesc(cell2mat(difference(2:end,2:end)));
-colorbar;
-xticklabels(string(biomarkers));
-yticks(1:nValid);
-yticklabels(valid_subjs);
-title("Median difference CNN / manual (%)")
+for i = 1:nBiomarkers
+    subplot(3,2,i);
+    edges = -10.1:0.2:10.1;
+    histogram(diffs_all(:,i),'BinEdges',edges);
+    title(biomarkers(i));
+    xlabel('Difference');
+    ylabel('Count');
+    xlim([-10,10]);
+end
