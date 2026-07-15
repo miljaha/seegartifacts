@@ -369,7 +369,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             SFR_original_all = [SFR_original_all; SFR_original];     
             SFR_both_removed = find_spikes_in_ripples(FR_both_removed, IED_both_removed, N_buffer);
             SFR_both_removed_all = [SFR_both_removed_all; SFR_both_removed];            
-            SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_CNN_removed, N_buffer);
+            SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_seizures_removed, N_buffer);
             SFR_CNN_removed_all = [SFR_CNN_removed_all; SFR_CNN_removed];
       
             fprintf('%d original SFRs successfully detected...\n', size(SFR_original,1));
@@ -380,7 +380,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             SRipples_original_all = [SRipples_original_all; SRipples_original];    
             SRipples_both_removed = find_spikes_in_ripples(R_both_removed, IED_both_removed, N_buffer);
             SRipples_both_removed_all = [SRipples_both_removed_all; SRipples_both_removed];            
-            SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_CNN_removed, N_buffer);
+            SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_seizures_removed, N_buffer);
             SRipples_CNN_removed_all = [SRipples_CNN_removed_all; SRipples_CNN_removed];
             
             fprintf('%d original SRs successfully detected...\n', size(SRipples_original,1));
