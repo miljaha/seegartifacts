@@ -4,7 +4,7 @@ addpath(genpath('Functions'));
 
 %% Single-Subject Utility
 % Input Parameters
-subj_num = 27; % subject number
+subj_num = 29; % subject number
 % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
 data_files = {""}; % if empty it evokes automatic data file selection
 % Function calling
@@ -48,10 +48,12 @@ end
 % Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
 T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
-startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
+%startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
+startTime = "8:20";
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
-startDate = hdr.StartDate;                              % date of first file (evening or night)
+startDate = hdr.StartDate; % date of first file (evening or night)
+startDate = '29.11.20';
 startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:ss');    % combine date and time
 %startTime = erase(startTime, "(1. filen alku)");  % if needed, remove the parentheses text
 %startTime = datetime(startTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
@@ -162,29 +164,29 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     handle_file    = true;
     looped_already = false;
 
-    FR_all = [];
-    FR_both_removed_all = [];
-    FR_CNN_removed_all = [];
+    FR_all = zeros(0,4);
+    FR_both_removed_all = zeros(0,4);
+    FR_CNN_removed_all = zeros(0,4);
     
-    IED_all = [];
-    IED_both_removed_all = [];
-    IED_CNN_removed_all = [];
+    IED_all = zeros(0,4);
+    IED_both_removed_all = zeros(0,4);
+    IED_CNN_removed_all = zeros(0,4);
     
-    R_all = [];
-    R_both_removed_all = [];
-    R_CNN_removed_all = [];
+    R_all = zeros(0,4);
+    R_both_removed_all = zeros(0,4);
+    R_CNN_removed_all = zeros(0,4);
     
-    GS_all = [];
-    GS_both_removed_all = [];
-    GS_CNN_removed_all = [];
+    GS_all = zeros(0,4);
+    GS_both_removed_all = zeros(0,4);
+    GS_CNN_removed_all = zeros(0,4);
 
-    SFR_original_all = [];
-    SFR_both_removed_all = [];
-    SFR_CNN_removed_all = [];
+    SFR_original_all = zeros(0,4);
+    SFR_both_removed_all = zeros(0,4);
+    SFR_CNN_removed_all = zeros(0,4);
         
-    SRipples_original_all = [];
-    SRipples_both_removed_all = [];
-    SRipples_CNN_removed_all = [];
+    SRipples_original_all = zeros(0,4);
+    SRipples_both_removed_all = zeros(0,4);
+    SRipples_CNN_removed_all = zeros(0,4);
 
     duration_artefacts = 0;
     duration_seizures  = 0;
@@ -220,16 +222,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         data_original = data.x_bip;
         % Bad channels from table
         badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
-        badchans_raw = strtrim(string(badchans_raw));
-        if badchans_raw == "-" || badchans_raw == ""
-            bad_channel_idx = false(size(bipolar_labels));
-        else
-            badchans_raw = regexprep(badchans_raw, '\([^)]*\)', '');
-            badchans = strtrim(split(badchans_raw, ','));
-            badchans = regexprep(badchans, '-.*', '');
-            badchans = regexprep(badchans, '([a-zA-Z]+)(\d)$', '$10$2');
-            bad_channel_idx = contains(bipolar_labels, lower(string(badchans)) + "-");
-        end
+        badchans = extract_bad_channels(badchans_raw);
+        bad_channel_idx = ismember(lower(bipolar_labels), badchans);
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
