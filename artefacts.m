@@ -2,10 +2,9 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [50,52,53,56,58,59,60];         % Subject number
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30];
+%,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject number
 % 51, 54, 55 ja 57 odottaa Päivin merkintöjä
-% [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48]
-% done
 
 % Maximum and minumum length of data procesed at once. You can edit these
 % depending on the computer you use, longer max length of segment makes the
@@ -178,12 +177,17 @@ all_info      = {};               % Cell array holding the recordings info
 all_rates     = {};               % Cell array holding the rates from all recordings
 all_CNN_durations = [];
 
+load('convnet.mat') 
+
 % check fs
 file_name = edf_filename(1);
 fs = sampling_rate(1); % get the edf file sampling rate
 fprintf("Sampling frequency is %d Hz\n",fs);
 max_length = max_length_mins*60*fs;            % min x sec x samples
 min_length = min_length_mins*60*fs;
+
+all_noise_probs = zeros(0,0);
+CNN_timepoints = zeros(0,0); % total noise probability per CNN segment
 %
 fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
@@ -191,31 +195,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     % Logic flages to check if accessing a prior file is needed
     handle_file    = true;
     looped_already = false;
-
-    FR_all = zeros(0,4);
-    FR_both_removed_all = zeros(0,4);
-    FR_CNN_removed_all = zeros(0,4);
-    
-    IED_all = zeros(0,4);
-    IED_both_removed_all = zeros(0,4);
-    IED_CNN_removed_all = zeros(0,4);
-    
-    R_all = zeros(0,4);
-    R_both_removed_all = zeros(0,4);
-    R_CNN_removed_all = zeros(0,4);
-    
-    GS_all = zeros(0,4);
-    GS_both_removed_all = zeros(0,4);
-    GS_CNN_removed_all = zeros(0,4);
-
-    SFR_original_all = zeros(0,4);
-    SFR_both_removed_all = zeros(0,4);
-    SFR_CNN_removed_all = zeros(0,4);
-        
-    SRipples_original_all = zeros(0,4);
-    SRipples_both_removed_all = zeros(0,4);
-    SRipples_CNN_removed_all = zeros(0,4);
-
     CNN_artifacts_all = []; 
 
     while handle_file
@@ -263,20 +242,20 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         % Extract the samples of interest
         sample_window_max = split_windows(sample_window(:,idx), max_length, min_length);
         duration_original = seconds(end_datetime(idx)-start_datetime(idx)); % in seconds
-
+        
         for s = 1:size(sample_window_max,2)
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
             fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
             %% Use CNN to find alternative artefacts
             fprintf(2,"=====    Classify segments using CNN    ======\n")
-    
-            load('convnet.mat') 
+
             windowSize = fs*3; % samples per segment 
             overlap = 0; % 
             step = windowSize - overlap; 
             numSegments = floor((size(data.x_bip,1) - windowSize) / step)+1;
             [b,a] = butter(3, 900/(0.5*fs), 'low');
             CNN_artifacts = zeros(numSegments,size(data.x_bip,2));
+            noise_probs = CNN_artifacts;
          
             for ch = 1:size(data.x_bip, 2) % loop through channels (158) 
                 signal = data.x_bip(:, ch); 
@@ -291,13 +270,15 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
                     segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
                     segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
                     img = imresize(segment, convnet.Layers(1).InputSize(1:2)); 
-                    [label,~] = classify(convnet, img); 
+                    [label,probs] = classify(convnet, img); 
                     switch label 
                         case 'noise'; CNN_artifacts(i,ch) = 1; 
                     end
+                    noise_probs(i,ch) = probs(1);
                 end 
             end
-    
+            all_noise_probs = [all_noise_probs, noise_probs];
+            CNN_timepoints = [CNN_timepoints, sum(noise_probs,2)];
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
@@ -697,15 +678,22 @@ main_hdr = {
             'GS occupancy (%)', '', '';
             };
 sub_block = {'Original','Manual','CNN'};
-sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
+sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN','Total noise (p/d)'} repmat(sub_block, 1, 12)];
 
-writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
+writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','F9');
 writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
 writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
 writematrix(sum(all_CNN_durations,1)', excelfile,'Sheet',sheet_name,'Range','D11')
 
+total_noise = sum(all_noise_probs,1) ./ all_durations(1);
+writematrix(total_noise, excelfile,'Sheet',sheet_name,'Range','E11')
+
 % Write the combined FR/IED/SFR rates and percentages of occupancy
-writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','E11');
+writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','F11');
 fprintf('Sheet "%s" in File "%s" is saved successfully ...\n\n', sheet_name, "detection_rates_pat" + subj_num + ".xls");
+
+excelfile = fullfile(data_dir, "noise_times_CNN_pat" + subj_num + ".xls");
+writematrix(CNN_timepoints,excelfile,'Range','A1');
+
 out = "The program has finished";
 end
