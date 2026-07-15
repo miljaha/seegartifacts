@@ -2,7 +2,8 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [12];%,19,20,21,22,23,24,25,26,27,28,29,30];
+subj_nums = [31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];
+%[12];%,19,20,21,22,23,24,25,26,27,28,29,30];
 %,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject number
 % 51, 54, 55 ja 57 odottaa Päivin merkintöjä
 
@@ -78,7 +79,6 @@ end
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
 T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
-startTime = "1:50"; %%%%%%%%%%
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
 startDate = hdr.StartDate;                              % date of first file (evening or night)
@@ -90,7 +90,6 @@ hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file
 endDate = hdr.StartDate; 
 endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
 %endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
-endTime = "2:15"; %%%%%%%%%%%%%%%%%
 endTime = datestr(endTime,'HH:MM:SS');
 endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
 user_datetime_range = { ...
@@ -199,7 +198,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     handle_file    = true;
     looped_already = false;
 
-     FR_all = zeros(0,4);
+    FR_all = zeros(0,4);
     FR_both_removed_all = zeros(0,4);
     FR_CNN_removed_all = zeros(0,4);
     
@@ -606,7 +605,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         sub_block = {'Original','Manual','CNN'};
         sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
-        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
+        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range', 'E9');
         writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
         % Write the rates and percentages of occupancy
         writematrix(FR_appear_rate,        excelfile,'Sheet',sheet_name,'Range','E11');
