@@ -2,7 +2,7 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30];
+subj_nums = [12];%,19,20,21,22,23,24,25,26,27,28,29,30];
 %,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject number
 % 51, 54, 55 ja 57 odottaa Päivin merkintöjä
 
@@ -78,6 +78,7 @@ end
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
 T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
+startTime = "1:50"; %%%%%%%%%%
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
 startDate = hdr.StartDate;                              % date of first file (evening or night)
@@ -89,6 +90,7 @@ hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file
 endDate = hdr.StartDate; 
 endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
 %endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
+endTime = "2:15"; %%%%%%%%%%%%%%%%%
 endTime = datestr(endTime,'HH:MM:SS');
 endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
 user_datetime_range = { ...
@@ -187,7 +189,8 @@ max_length = max_length_mins*60*fs;            % min x sec x samples
 min_length = min_length_mins*60*fs;
 
 all_noise_probs = zeros(0,0);
-CNN_timepoints = zeros(0,0); % total noise probability per CNN segment
+CNN_timepoints_probs = zeros(0,0); % total noise probability per CNN segment
+CNN_timepoints_n = zeros(0,0); % sum of channels artefactual per segment
 %
 fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
@@ -195,6 +198,31 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     % Logic flages to check if accessing a prior file is needed
     handle_file    = true;
     looped_already = false;
+
+     FR_all = zeros(0,4);
+    FR_both_removed_all = zeros(0,4);
+    FR_CNN_removed_all = zeros(0,4);
+    
+    IED_all = zeros(0,4);
+    IED_both_removed_all = zeros(0,4);
+    IED_CNN_removed_all = zeros(0,4);
+    
+    R_all = zeros(0,4);
+    R_both_removed_all = zeros(0,4);
+    R_CNN_removed_all = zeros(0,4);
+    
+    GS_all = zeros(0,4);
+    GS_both_removed_all = zeros(0,4);
+    GS_CNN_removed_all = zeros(0,4);
+
+    SFR_original_all = zeros(0,4);
+    SFR_both_removed_all = zeros(0,4);
+    SFR_CNN_removed_all = zeros(0,4);
+        
+    SRipples_original_all = zeros(0,4);
+    SRipples_both_removed_all = zeros(0,4);
+    SRipples_CNN_removed_all = zeros(0,4);
+
     CNN_artifacts_all = []; 
 
     while handle_file
@@ -277,8 +305,9 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
                     noise_probs(i,ch) = probs(1);
                 end 
             end
-            all_noise_probs = [all_noise_probs, noise_probs];
-            CNN_timepoints = [CNN_timepoints, sum(noise_probs,2)];
+            all_noise_probs = [all_noise_probs; noise_probs];
+            CNN_timepoints_probs = [CNN_timepoints_probs; sum(noise_probs,2)];
+            CNN_timepoints_n = [CNN_timepoints_n, sum(CNN_artifacts,2)];
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
