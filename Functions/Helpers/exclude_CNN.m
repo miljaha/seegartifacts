@@ -1,7 +1,7 @@
 function CNN_excluded = exclude_CNN(biomarkers, CNN_matrix, sample_window, idx,fs)
 
     recording_start = sample_window(1,idx);
-    CNN_excluded = [];
+    CNN_excluded = zeros(0,4);
     counter = 1;
 
     for i = 1:size(biomarkers, 1)
