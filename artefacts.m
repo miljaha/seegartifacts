@@ -192,34 +192,29 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     handle_file    = true;
     looped_already = false;
 
-    FR_all = [];
-    FR_both_removed_all = [];
-    FR_CNN_removed_all = [];
+    FR_all = zeros(0,4);
+    FR_both_removed_all = zeros(0,4);
+    FR_CNN_removed_all = zeros(0,4);
     
-    IED_all = [];
-    IED_both_removed_all = [];
-    IED_CNN_removed_all = [];
+    IED_all = zeros(0,4);
+    IED_both_removed_all = zeros(0,4);
+    IED_CNN_removed_all = zeros(0,4);
     
-    R_all = [];
-    R_both_removed_all = [];
-    R_CNN_removed_all = [];
+    R_all = zeros(0,4);
+    R_both_removed_all = zeros(0,4);
+    R_CNN_removed_all = zeros(0,4);
     
-    GS_all = [];
-    GS_both_removed_all = [];
-    GS_CNN_removed_all = [];
+    GS_all = zeros(0,4);
+    GS_both_removed_all = zeros(0,4);
+    GS_CNN_removed_all = zeros(0,4);
 
-    SFR_original_all = [];
-    SFR_both_removed_all = [];
-    SFR_CNN_removed_all = [];
+    SFR_original_all = zeros(0,4);
+    SFR_both_removed_all = zeros(0,4);
+    SFR_CNN_removed_all = zeros(0,4);
         
-    SRipples_original_all = [];
-    SRipples_both_removed_all = [];
-    SRipples_CNN_removed_all = [];
-
-    duration_artefacts = 0;
-    duration_seizures  = 0;
-    duration_both = 0;
-    duration_CNN = 0;
+    SRipples_original_all = zeros(0,4);
+    SRipples_both_removed_all = zeros(0,4);
+    SRipples_CNN_removed_all = zeros(0,4);
 
     CNN_artifacts_all = []; 
 
@@ -250,16 +245,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         data_original = data.x_bip;
         % Bad channels from table
         badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
-        badchans_raw = strtrim(string(badchans_raw));
-        if badchans_raw == "-" || badchans_raw == ""
-            bad_channel_idx = false(size(bipolar_labels));
-        else
-            badchans_raw = regexprep(badchans_raw, '\([^)]*\)', '');
-            badchans = strtrim(split(badchans_raw, ','));
-            badchans = regexprep(badchans, '-.*', '');
-            badchans = regexprep(badchans, '([a-zA-Z]+)(\d)$', '$10$2');
-            bad_channel_idx = contains(bipolar_labels, lower(string(badchans)) + "-");
-        end
+        badchans = extract_bad_channels(badchans_raw);
+        bad_channel_idx = ismember(lower(bipolar_labels), badchans);
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
@@ -288,7 +275,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             overlap = 0; % 
             step = windowSize - overlap; 
             numSegments = floor((size(data.x_bip,1) - windowSize) / step)+1;
-            segment_times = (0:numSegments-1) * (step/fs);
             [b,a] = butter(3, 900/(0.5*fs), 'low');
             CNN_artifacts = zeros(numSegments,size(data.x_bip,2));
          
@@ -371,7 +357,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             GS_both_removed = exclude_samples(GammaSpikes, both_samples, 0, 0, 'combined artefact & seizure');
             GS_both_removed_all = [GS_both_removed_all; GS_both_removed];
             GS_seizures_removed = exclude_samples(GammaSpikes, seizure_samples , 0, 0, 'seizure');
-            GS_CNN_removed = exclude_CNN(GammaSpikes, CNN_artifacts, sample_window_max, s,fs);
+            GS_CNN_removed = exclude_CNN(GS_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
             GS_CNN_removed_all = [GS_CNN_removed_all; GS_CNN_removed];
             
             
