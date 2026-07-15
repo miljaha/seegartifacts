@@ -48,12 +48,10 @@ end
 % Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
 T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
-%startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
-startTime = "8:20";
+startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
 startDate = hdr.StartDate; % date of first file (evening or night)
-startDate = '29.11.20';
 startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:ss');    % combine date and time
 %startTime = erase(startTime, "(1. filen alku)");  % if needed, remove the parentheses text
 %startTime = datetime(startTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
@@ -335,7 +333,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             GS_both_removed = exclude_samples(GammaSpikes, both_samples, 0, 0, 'combined artefact & seizure');
             GS_both_removed_all = [GS_both_removed_all; GS_both_removed];
             GS_seizures_removed = exclude_samples(GammaSpikes, seizure_samples , 0, 0, 'seizure');
-            GS_CNN_removed = exclude_CNN(GammaSpikes, CNN_artifacts, sample_window_max, s,fs);
+            GS_CNN_removed = exclude_CNN(GS_seizures_removed, CNN_artifacts, sample_window_max, s,fs);
             GS_CNN_removed_all = [GS_CNN_removed_all; GS_CNN_removed];
             
             
@@ -347,7 +345,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             SFR_original_all = [SFR_original_all; SFR_original];     
             SFR_both_removed = find_spikes_in_ripples(FR_both_removed, IED_both_removed, N_buffer);
             SFR_both_removed_all = [SFR_both_removed_all; SFR_both_removed];            
-            SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_CNN_removed, N_buffer);
+            SFR_CNN_removed = find_spikes_in_ripples(FR_CNN_removed, IED_seizures_removed, N_buffer);
             SFR_CNN_removed_all = [SFR_CNN_removed_all; SFR_CNN_removed];
       
             fprintf('%d original SFRs successfully detected...\n', size(SFR_original,1));
@@ -358,7 +356,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             SRipples_original_all = [SRipples_original_all; SRipples_original];    
             SRipples_both_removed = find_spikes_in_ripples(R_both_removed, IED_both_removed, N_buffer);
             SRipples_both_removed_all = [SRipples_both_removed_all; SRipples_both_removed];            
-            SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_CNN_removed, N_buffer);
+            SRipples_CNN_removed = find_spikes_in_ripples(R_CNN_removed, IED_seizures_removed, N_buffer);
             SRipples_CNN_removed_all = [SRipples_CNN_removed_all; SRipples_CNN_removed];
             
             fprintf('%d original SRs successfully detected...\n', size(SRipples_original,1));
