@@ -548,7 +548,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
         %% Export summary results to an Excel file
         fprintf(2,'\n======                Export rates for file "%s"                ======\n', file_name);
-        excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xls");
+        excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xlsx");
         % if idx == 1 && exist(excelfile,'file') > 0, delete(excelfile); end % check if an older excel file exists and delete it
         sheet_name = string(erase(file_name, ".edf"));
         % Write the file/signal information
