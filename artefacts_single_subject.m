@@ -4,12 +4,14 @@ addpath(genpath('Functions'));
 
 %% Single-Subject Utility
 % Input Parameters
-subj_num = 29; % subject number
+subj_num = 12; % subject number
 % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
 data_files = {""}; % if empty it evokes automatic data file selection
 % Function calling
 %data_dir = "C:\Data\Pat" + string(subj_num) + "Stimulation_data";
 data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
+max_length_mins = 15;
+min_length_mins = 5;
 
 %
 fprintf(2,'\n======                    Checking data and file directories                    ======\n');
@@ -51,7 +53,7 @@ T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
-startDate = hdr.StartDate; % date of first file (evening or night)
+startDate = hdr.StartDate;                              % date of first file (evening or night)
 startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:ss');    % combine date and time
 %startTime = erase(startTime, "(1. filen alku)");  % if needed, remove the parentheses text
 %startTime = datetime(startTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
@@ -148,12 +150,26 @@ all_info      = {};               % Cell array holding the recordings info
 all_rates     = {};               % Cell array holding the rates from all recordings
 all_CNN_durations = [];
 
+load('convnet.mat') 
+
 % check fs
 file_name = edf_filename(1);
 fs = sampling_rate(1); % get the edf file sampling rate
 fprintf("Sampling frequency is %d Hz\n",fs);
-max_length = 15*60*fs;            % min x sec x samples
-min_length = 5*60*fs;
+max_length = max_length_mins*60*fs;            % min x sec x samples
+min_length = min_length_mins*60*fs;
+
+[EDFhdr, data] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
+[~, M] = size(data); 
+label  = string(erase(EDFhdr.ChanLabel(1:M)',"POL ")); % remove "POL " from the channel labels
+[~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
+nChans = length(bipo_inds);
+
+
+all_noise_probs = zeros(nChans,1);
+CNN_timepoints_probs = zeros(0,0); % total noise probability per CNN segment
+CNN_timepoints_n = zeros(0,0); % sum of channels artefactual per segment
+
 %
 fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
@@ -185,11 +201,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     SRipples_original_all = zeros(0,4);
     SRipples_both_removed_all = zeros(0,4);
     SRipples_CNN_removed_all = zeros(0,4);
-
-    duration_artefacts = 0;
-    duration_seizures  = 0;
-    duration_both = 0;
-    duration_CNN = 0;
 
     CNN_artifacts_all = []; 
 
@@ -238,21 +249,20 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         % Extract the samples of interest
         sample_window_max = split_windows(sample_window(:,idx), max_length, min_length);
         duration_original = seconds(end_datetime(idx)-start_datetime(idx)); % in seconds
-
+        
         for s = 1:size(sample_window_max,2)
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
             fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
             %% Use CNN to find alternative artefacts
             fprintf(2,"=====    Classify segments using CNN    ======\n")
-    
-            load('convnet.mat') 
+
             windowSize = fs*3; % samples per segment 
             overlap = 0; % 
             step = windowSize - overlap; 
             numSegments = floor((size(data.x_bip,1) - windowSize) / step)+1;
-            segment_times = (0:numSegments-1) * (step/fs);
             [b,a] = butter(3, 900/(0.5*fs), 'low');
             CNN_artifacts = zeros(numSegments,size(data.x_bip,2));
+            noise_probs = CNN_artifacts;
          
             for ch = 1:size(data.x_bip, 2) % loop through channels (158) 
                 signal = data.x_bip(:, ch); 
@@ -267,13 +277,16 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
                     segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
                     segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
                     img = imresize(segment, convnet.Layers(1).InputSize(1:2)); 
-                    [label,~] = classify(convnet, img); 
+                    [label,probs] = classify(convnet, img); 
                     switch label 
                         case 'noise'; CNN_artifacts(i,ch) = 1; 
                     end
+                    noise_probs(i,ch) = probs(1);
                 end 
             end
-    
+            all_noise_probs = all_noise_probs + sum(noise_probs,1)';
+            CNN_timepoints_probs = [CNN_timepoints_probs; sum(noise_probs,2)];
+            CNN_timepoints_n = [CNN_timepoints_n; sum(CNN_artifacts,2)];
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
@@ -382,7 +395,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
         clean_mask = ~sample_wise_artifacts & ~seizure_mask;
         clean_duration_per_channel = sum(clean_mask, 1) / fs;
-
         %% Rate computations
         fprintf(2,'\n======                             Rate computations                            ======\n');
         % in minutes
@@ -573,7 +585,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         sub_block = {'Original','Manual','CNN'};
         sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
 
-        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
+        writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range', 'E9');
         writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
         % Write the rates and percentages of occupancy
         writematrix(FR_appear_rate,        excelfile,'Sheet',sheet_name,'Range','E11');
@@ -674,15 +686,21 @@ main_hdr = {
             'GS occupancy (%)', '', '';
             };
 sub_block = {'Original','Manual','CNN'};
-sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN'} repmat(sub_block, 1, 12)];
+sub_hdr = [{'Channel number','Label','Bad channel', 'Duration after CNN','Total noise (p/d)'} repmat(sub_block, 1, 12)];
 
-writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','E9');
+writecell(reshape(main_hdr',1,[]),excelfile,'Sheet',sheet_name,'Range','F9');
 writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
 writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
 writematrix(sum(all_CNN_durations,1)', excelfile,'Sheet',sheet_name,'Range','D11')
 
+total_noise = sum(all_noise_probs,1) ./ all_durations(1);
+writematrix(total_noise, excelfile,'Sheet',sheet_name,'Range','E11')
+
 % Write the combined FR/IED/SFR rates and percentages of occupancy
-writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','E11');
+writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','F11');
 fprintf('Sheet "%s" in File "%s" is saved successfully ...\n\n', sheet_name, "detection_rates_pat" + subj_num + ".xls");
+
+excelfile = fullfile(data_dir, "noise_times_CNN_pat" + subj_num + ".xls");
+writematrix(CNN_timepoints,excelfile,'Range','A1');
+
 out = "The program has finished";
-diary off; % close the log file
