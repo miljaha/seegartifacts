@@ -27,7 +27,6 @@ for i = 1:length(subj_nums)
         fprintf("Starting subject %d\n",subj_nums(i))
         data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
         edfFiles = {""}; % automatic selection
-
         z = run_detections(subj_nums(i), data_dir, ...
             edfFiles,max_length_mins, min_length_mins);
         fprintf("Subject %d complete, moving to next subject\n",subj_nums(i))
@@ -187,9 +186,17 @@ fprintf("Sampling frequency is %d Hz\n",fs);
 max_length = max_length_mins*60*fs;            % min x sec x samples
 min_length = min_length_mins*60*fs;
 
-all_noise_probs = zeros(0,0);
+[EDFhdr, data] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
+[~, M] = size(data); 
+label  = string(erase(EDFhdr.ChanLabel(1:M)',"POL ")); % remove "POL " from the channel labels
+[~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
+nChans = length(bipo_inds);
+
+
+all_noise_probs = zeros(nChans,1);
 CNN_timepoints_probs = zeros(0,0); % total noise probability per CNN segment
 CNN_timepoints_n = zeros(0,0); % sum of channels artefactual per segment
+
 %
 fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
@@ -304,9 +311,9 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
                     noise_probs(i,ch) = probs(1);
                 end 
             end
-            all_noise_probs = [all_noise_probs; noise_probs];
+            all_noise_probs = all_noise_probs + sum(noise_probs,1)';
             CNN_timepoints_probs = [CNN_timepoints_probs; sum(noise_probs,2)];
-            CNN_timepoints_n = [CNN_timepoints_n, sum(CNN_artifacts,2)];
+            CNN_timepoints_n = [CNN_timepoints_n; sum(CNN_artifacts,2)];
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
