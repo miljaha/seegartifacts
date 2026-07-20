@@ -1,5 +1,5 @@
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
-32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
+subj_nums = [12];%,19,20,21,22,23,24,25,26,27,28,29,30,31,...
+%32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
 
 
 for i = 1:nSubjects
@@ -11,19 +11,28 @@ for i = 1:nSubjects
         probs = T{:,2}; % 2nd col
         
         filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/detection_rates_pat"+string(subj_nums(i))+".xls";
-        badchannels = readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve');
-        badchannels = badchannels(~isnan(table2array(T.badchannels)),1);
+        badchannels = readtable(filename,"Sheet", "files combined", "Range","C11:E200",'VariableNamingRule','preserve');
+        bad_flags = badchannels(:,1);
+        badchan_idx = badchannels(:,3);
 
-
+        %{
+        data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
+        edfFiles = {""}; % automatic selection
+        
+        % full_artifactual = artifacts, full bad = artifacts + seizures
+        [full_artifactual, full_bad, nChans] = get_artefact_samples(subj_nums(i),data_dir,edfFiles);
+        %}
+        n_timepoints = n_timepoints/nChans;
+        probs = probs/nChans;
 
     catch ME
         fprintf("Problem in reading data from subject %d, skipping this subject\n", subj_nums(i))
     end
 end
 
-function [artefacts, both] = get_artefact_samples()
+%%
+function [full_artifactual, full_bad,M] = get_artefact_samples(subj_num, data_dir, data_files)
 
-fprintf(2,'\n======                    Checking data and file directories                    ======\n');
 if exist(data_dir,"file") > 0  % check if the data directory exists
     F = dir(fullfile(data_dir, "*.edf"));    % list all edf files in the subject's directory
     edf_filename = string({F.name}');        % gather all edf filenames
@@ -133,6 +142,9 @@ disp(table(edf_filename,string(start_datetime),string(end_datetime), ...
 start_datetime.Format = datetime_format;
 end_datetime.Format   = datetime_format;
 
+full_artifactual = [];
+full_bad = [];
+
 % Main Script applied to each subject's record separately
 for file_number = 1:num_edf_files % iteratre through the subject's included files/recordings
     % Logic flages to check if accessing a prior file is needed
@@ -145,7 +157,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         file_name = edf_filename(idx);
         [EDFhdr, data] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
         fs = EDFhdr.SamplingRate(1); % get the edf file sampling rate
-        [N, ~] = size(data);         % number of samples and channels
+        [N, M] = size(data);         % number of samples and channels
         clear data
         events = EDFhdr.Annotations;   % get the annotations
         if any(isnan([events.sample])) % check for invalid markers (MA updated)
@@ -157,13 +169,49 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
-        [seizure_samples, overflow_start, overflow_end] = extract_seizure_locations(events, N, fs, ...
+        [seizure_samples, ~, ~] = extract_seizure_locations(events, N, fs, ...
             seizure_time_overflow_start, seizure_time_overflow_end, ...
             looped_already, sample_window(1,idx), sample_window(2,idx));
-        % combine artefact and seizure intervals
         both_samples = merge_intervals(seizure_samples, artefact_samples);
 
+        % create 3s segment artifacts
+        windowSize = fs*3; % samples per segment 
+        numSegments = floor((N - windowSize) / windowSize)+1;
         
+        artifactual = zeros(numSegments,1);
+        baddata = zeros(numSegments,1);
+        
+        for i = 1:numSegments
+            % absolute sample range of this segment
+            segStart = sample_window(1)+(i-1)*windowSize;
+            segEnd   = segStart + windowSize - 1;
+            
+            if isempty(both_samples)
+                artifactual(i) = 0;
+                baddata(i) = 0;
+                continue;
+            end
+            
+            % overlap between this segment and each artefact interval
+            intersect_start = max(segStart, artefact_samples(:,1));
+            intersect_end   = min(segEnd, artefact_samples(:,2));
+
+            valid = intersect_end > intersect_start;
+            overlap_lengths = intersect_end(valid) - intersect_start(valid);
+            
+            % fraction of segment that is artefact (0 to 1)
+            artifactual(i) = sum(overlap_lengths) / windowSize;
+
+            % overlap between this segment and each artefact+seizure interval
+            intersect_start = max(segStart, both_samples(:,1));
+            intersect_end   = min(segEnd, both_samples(:,2));
+
+            valid = intersect_end > intersect_start;
+            overlap_lengths = intersect_end(valid) - intersect_start(valid);
+            
+            % fraction of segment that is artefact (0 to 1)
+            baddata(i) = sum(overlap_lengths) / windowSize;
+        end
 
         handle_file = false;
         if seizure_time_overflow_start > 0 && ~looped_already && idx > 1
@@ -171,6 +219,9 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             looped_already = true;
             disp([newline '--- Seizure time overflows to previous file, reaccessing it ---' newline]);
         end
-
     end
+    full_bad = [full_bad; baddata];
+    full_artifactual = [full_artifactual; artifactual];
+end
+
 end
