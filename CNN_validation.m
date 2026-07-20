@@ -1,10 +1,13 @@
 subj_nums = [12];%,19,20,21,22,23,24,25,26,27,28,29,30,31,...
 %32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
+nSubjects = length(subj_nums);
 
+results = struct(); % preallocate struct array
+valid_subjs = [];
 
 for i = 1:nSubjects
     % load data
-    try
+    %try
         filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/noise_times_CNN_pat"+string(subj_nums(i))+".xls";
         T = readtable(filename);
         n_timepoints = T{:,1}; % first col
@@ -12,26 +15,38 @@ for i = 1:nSubjects
         
         filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/detection_rates_pat"+string(subj_nums(i))+".xls";
         badchannels = readtable(filename,"Sheet", "files combined", "Range","C11:E200",'VariableNamingRule','preserve');
-        bad_flags = badchannels(:,1);
-        badchan_idx = badchannels(:,3);
-
-        %{
+        bad_flags = table2array(badchannels(:,1));
+        badchan_idx = table2array(badchannels(:,3));
+        bad_flags = bad_flags(~isnan(bad_flags));
+        badchan_idx = badchan_idx(~isnan(badchan_idx));
+        nChans = size(badchan_idx,1);
+       
         data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
         edfFiles = {""}; % automatic selection
         
         % full_artifactual = artifacts, full bad = artifacts + seizures
-        [full_artifactual, full_bad, nChans] = get_artefact_samples(subj_nums(i),data_dir,edfFiles);
-        %}
+        [full_artifactual, full_bad] = get_artefact_samples(subj_nums(i),data_dir,edfFiles);
+      
         n_timepoints = n_timepoints/nChans;
         probs = probs/nChans;
 
-    catch ME
-        fprintf("Problem in reading data from subject %d, skipping this subject\n", subj_nums(i))
-    end
+        results(i).subj_num = subj_nums(i);
+        results(i).n_timepoints = n_timepoints; % 1 x nTimepoints_i
+        results(i).probs = probs;               % 1 x nTimepoints_i
+        results(i).full_artifactual = full_artifactual; % 1 x nTimepoints_i
+        results(i).bad_flags = bad_flags;        % 1 x nChans_i
+        results(i).badchan_idx = badchan_idx;    % 1 x nChans_i
+        results(i).nChans = nChans;
+
+        valid_subjs = [valid_subjs; subj_nums(i)];
+
+   % catch ME
+    %    fprintf("Problem in reading data from subject %d, skipping this subject\n", subj_nums(i))
+   % end
 end
 
 %%
-function [full_artifactual, full_bad,M] = get_artefact_samples(subj_num, data_dir, data_files)
+function [full_artifactual, full_bad] = get_artefact_samples(subj_num, data_dir, data_files)
 
 if exist(data_dir,"file") > 0  % check if the data directory exists
     F = dir(fullfile(data_dir, "*.edf"));    % list all edf files in the subject's directory
@@ -144,6 +159,8 @@ end_datetime.Format   = datetime_format;
 
 full_artifactual = [];
 full_bad = [];
+seizure_time_overflow_start = 0;  % Seizure time overflows starts to the current file from other files
+seizure_time_overflow_end = 0;
 
 % Main Script applied to each subject's record separately
 for file_number = 1:num_edf_files % iteratre through the subject's included files/recordings
@@ -157,7 +174,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         file_name = edf_filename(idx);
         [EDFhdr, data] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
         fs = EDFhdr.SamplingRate(1); % get the edf file sampling rate
-        [N, M] = size(data);         % number of samples and channels
+        [N, ~] = size(data);         % number of samples and channels
         clear data
         events = EDFhdr.Annotations;   % get the annotations
         if any(isnan([events.sample])) % check for invalid markers (MA updated)
