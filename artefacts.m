@@ -76,7 +76,7 @@ end
 
 % Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
-T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
+T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs2.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
