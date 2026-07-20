@@ -1,47 +1,28 @@
-% Multi-Subject Utility
-% % Input Parameters
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
+32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
 
-% Subjects to be analysed in a loop
-subj_nums = [50,52,53,56,58,59,60];         % Subject number
-% 51, 54, 55 ja 57 odottaa Päivin merkintöjä
-% [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48]
-% done
 
-% Maximum and minumum length of data procesed at once. You can edit these
-% depending on the computer you use, longer max length of segment makes the
-% processing faster, but too long segment will crash MATLAB if computer
-% doesn't have enough RAM. Keep min over 5 mins due to background
-% calculation. Basically, all segments will be the max length and then the
-% remaining time, but if remaining time would be under minimum, then the
-% last segment is max + remaining.
-
-max_length_mins = 15;
-min_length_mins = 5;
-%%
-logname = sprintf("analysis_log_%s.txt", datestr(now,'yyyymmdd_HHMMSS'));
-diary(logname);
-diary on;
-% Function calling in a loop
-for i = 1:length(subj_nums)
+for i = 1:nSubjects
+    % load data
     try
-        fprintf("Starting subject %d\n",subj_nums(i))
-        data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
-        edfFiles = {""}; % automatic selection
+        filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/noise_times_CNN_pat"+string(subj_nums(i))+".xls";
+        T = readtable(filename);
+        n_timepoints = T{:,1}; % first col
+        probs = T{:,2}; % 2nd col
+        
+        filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/detection_rates_pat"+string(subj_nums(i))+".xls";
+        badchannels = readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve');
+        badchannels = badchannels(~isnan(table2array(T.badchannels)),1);
 
-        z = run_detections(subj_nums(i), data_dir, ...
-            edfFiles,max_length_mins, min_length_mins);
-        fprintf("Subject %d complete, moving to next subject\n",subj_nums(i))
+
+
     catch ME
-        fprintf("!!! ERROR for subject %d !!!\n", subj_nums(i));
-        fprintf("Message: %s\n", ME.message);
-        fprintf("Continuing to next subject...\n\n");
-    end   
+        fprintf("Problem in reading data from subject %d, skipping this subject\n", subj_nums(i))
+    end
 end
-fprintf("\nAll subjects analysed! :)\n")
-diary off;
 
-function out = run_detections(subj_num,data_dir,data_files,max_length_mins, min_length_mins)
-%
+function [artefacts, both] = get_artefact_samples()
+
 fprintf(2,'\n======                    Checking data and file directories                    ======\n');
 if exist(data_dir,"file") > 0  % check if the data directory exists
     F = dir(fullfile(data_dir, "*.edf"));    % list all edf files in the subject's directory
@@ -51,24 +32,10 @@ if exist(data_dir,"file") > 0  % check if the data directory exists
     else
         data_files = string(data_files);
         if ~(length(data_files) == 1 && strcmp(data_files(1),"")) % check if data file selection is auto or manual
-            fprintf('Data file selection mode is manual\n');
             temp = intersect(data_files,edf_filename); % get subset of edf filenames
             if isempty(temp) % check if the selected files exist
                 error('The selected EDF files do not exist in the selected directory!');
-            else
-                file_cond = ismember(data_files,temp); % check which files dont exist
-                for i = 1:length(data_files)
-                    fprintf('The data file "%s"', data_files(i));
-                    if file_cond(i)
-                        fprintf(" is OK\n");
-                    else
-                        fprintf(2," does not exist!\n");
-                    end
-                end
-                edf_filename = temp;
             end
-        else
-            fprintf('Data file selection mode is automatic\n');
         end
     end
 else
@@ -76,20 +43,16 @@ else
 end
 
 % Define the datetime range as {sleep start, sleep start + 1h}
-fprintf(2,'\n======                        Checking the datetime range                       ======\n');
 T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
 startDate = hdr.StartDate;                              % date of first file (evening or night)
 startTime = datetime([startDate ' ' startTime], 'InputFormat', 'dd.MM.yy HH:mm:ss');    % combine date and time
-%startTime = erase(startTime, "(1. filen alku)");  % if needed, remove the parentheses text
-%startTime = datetime(startTime, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
 
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(end))); % date of the last file (morning)
 endDate = hdr.StartDate; 
 endTime = T.sleepEnd(find(T.PatNRo == subj_num));   % find time from table
-%endTime = erase(endTime , "(viimeisen filen loppu)");  % if needed, remove the parentheses text
 endTime = datestr(endTime,'HH:MM:SS');
 endTime = datetime([endDate ' ' endTime], 'InputFormat','dd.MM.yy HH:mm:ss');   % combine date and time
 user_datetime_range = { ...
@@ -170,67 +133,27 @@ disp(table(edf_filename,string(start_datetime),string(end_datetime), ...
 start_datetime.Format = datetime_format;
 end_datetime.Format   = datetime_format;
 
-% Intialize variables
-seizure_time_overflow_start = 0;  % Seizure time overflows starts to the current file from other files
-seizure_time_overflow_end = 0;    % Seizure time overflows ends to the current file from other files
-all_labels    = {};               % Cell array holding the channel labels from all recordings
-all_info      = {};               % Cell array holding the recordings info
-all_rates     = {};               % Cell array holding the rates from all recordings
-all_CNN_durations = [];
-
-% check fs
-file_name = edf_filename(1);
-fs = sampling_rate(1); % get the edf file sampling rate
-fprintf("Sampling frequency is %d Hz\n",fs);
-max_length = max_length_mins*60*fs;            % min x sec x samples
-min_length = min_length_mins*60*fs;
-%
-fprintf(2,"======       Beginning of analysis        ======\n")
 % Main Script applied to each subject's record separately
 for file_number = 1:num_edf_files % iteratre through the subject's included files/recordings
     % Logic flages to check if accessing a prior file is needed
     handle_file    = true;
     looped_already = false;
 
-    CNN_artifacts_all = []; 
-
     while handle_file
         %% Loading and data extraction from EDF file
         idx = file_number - 1.*looped_already; % Determine the index of the file to be handled
         file_name = edf_filename(idx);
-        fprintf(2,'======        Loading and data extraction from file "%s"        ======\n', file_name);
         [EDFhdr, data] = MemReadEDF(fullfile(data_dir, file_name), 'annotations'); % load data and annotations
         fs = EDFhdr.SamplingRate(1); % get the edf file sampling rate
-        [N, M] = size(data);         % number of samples and channels
-        label  = string(erase(EDFhdr.ChanLabel(1:M)',"POL ")); % remove "POL " from the channel labels
+        [N, ~] = size(data);         % number of samples and channels
+        clear data
         events = EDFhdr.Annotations;   % get the annotations
         if any(isnan([events.sample])) % check for invalid markers (MA updated)
             warning("Some annotation markers are invalid!");
             events(isnan([events.sample])) = []; % remove invalid annotations (MA updated)
             disp('Removing invalid annotations is complete!');
         end
-        fprintf('File %s is loaded successfully...\n', file_name);
-        [~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
 
-        %% Data preprocessing
-        fprintf(2,'\n======                            Data preprocessing                            ======\n');
-        bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
-            repelem('-',length(bipo_inds),1) char(label{bipo_inds(:,2)})])); % Cover unipolar labels to bipolar
-        bipolar_labels = erase(bipolar_labels,' ');                          % Remove any empty spaces if exists
-        data = uni2bi_montage(data', label); % Convert the data to the bipolar montage (MA updated)
-        data_original = data.x_bip;
-        % Bad channels from table
-        badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
-        badchans_raw = strtrim(string(badchans_raw));
-        if badchans_raw == "-" || badchans_raw == ""
-            bad_channel_idx = false(size(bipolar_labels));
-        else
-            badchans_raw = regexprep(badchans_raw, '\([^)]*\)', '');
-            badchans = strtrim(split(badchans_raw, ','));
-            badchans = regexprep(badchans, '-.*', '');
-            badchans = regexprep(badchans, '([a-zA-Z]+)(\d)$', '$10$2');
-            bad_channel_idx = contains(bipolar_labels, lower(string(badchans)) + "-");
-        end
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
@@ -239,61 +162,15 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             looped_already, sample_window(1,idx), sample_window(2,idx));
         % combine artefact and seizure intervals
         both_samples = merge_intervals(seizure_samples, artefact_samples);
-        % Save seizure time overflows (overflows at start -> Goes to PREVIOUS file)
-        seizure_time_overflow_start = overflow_start;
-        % Only saves the end overflow if not rehandling prior file
-        % (overflows at end -> Goes to NEXT file)
-        if ~looped_already, seizure_time_overflow_end = overflow_end; end
-        % Extract the samples of interest
-        sample_window_max = split_windows(sample_window(:,idx), max_length, min_length);
-        duration_original = seconds(end_datetime(idx)-start_datetime(idx)); % in seconds
 
-        for s = 1:size(sample_window_max,2)
-            data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
-            fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
-            %% Use CNN to find alternative artefacts
-            fprintf(2,"=====    Classify segments using CNN    ======\n")
-    
-            load('convnet.mat') 
-            windowSize = fs*3; % samples per segment 
-            overlap = 0; % 
-            step = windowSize - overlap; 
-            numSegments = floor((size(data.x_bip,1) - windowSize) / step)+1;
-            segment_times = (0:numSegments-1) * (step/fs);
-            [b,a] = butter(3, 900/(0.5*fs), 'low');
-            CNN_artifacts = zeros(numSegments,size(data.x_bip,2));
-         
-            for ch = 1:size(data.x_bip, 2) % loop through channels (158) 
-                signal = data.x_bip(:, ch); 
-                for i = 1:numSegments 
-                    startIdx = (i-1)*step + 1; 
-                    endIdx = startIdx + windowSize - 1;
-                    segment_raw = signal(startIdx:endIdx); 
-                    segment = zeros(5, windowSize); % Lowpass (≤900 Hz) 
-                    segment(1,:) = zscore(filtfilt(b,a,segment_raw)); %Bandpass envelopes 
-                    segment(2,:) = zscore(BpPowerEnvelope(segment_raw, 20, 100, fs)); 
-                    segment(3,:) = zscore(BpPowerEnvelope(segment_raw, 80, 250, fs)); 
-                    segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
-                    segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
-                    img = imresize(segment, convnet.Layers(1).InputSize(1:2)); 
-                    [label,~] = classify(convnet, img); 
-                    switch label 
-                        case 'noise'; CNN_artifacts(i,ch) = 1; 
-                    end
-                end 
-            end
-            CNN_artifacts_all = [CNN_artifacts_all;CNN_artifacts];
+        
+
+        handle_file = false;
+        if seizure_time_overflow_start > 0 && ~looped_already && idx > 1
+            handle_file = true;
+            looped_already = true;
+            disp([newline '--- Seizure time overflows to previous file, reaccessing it ---' newline]);
         end
-                % remove seizures from CNN time
-        sample_wise_artifacts = repelem(CNN_artifacts_all, windowSize, 1);
-        seizure_mask = false(size(sample_wise_artifacts,1),1);
-        for i = 1:size(seizure_samples,1)
-            s = seizure_samples(i,1);
-            e = seizure_samples(i,2);
-            seizure_mask(s:e) = true;
-        end
-        sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
-        clean_mask = ~sample_wise_artifacts & ~seizure_mask;
-        clean_duration_per_channel = sum(clean_mask, 1) / fs;
+
     end
 end
