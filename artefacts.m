@@ -2,8 +2,8 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];
-%[12];%,19,20,21,22,23,24,25,26,27,28,29,30];
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30];
+%[12,19,20,21,22,23,24,25,26,27,28,29,30];
 %,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject number
 % 51, 54, 55 ja 57 odottaa Päivin merkintöjä
 
@@ -15,7 +15,7 @@ subj_nums = [31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,5
 % remaining time, but if remaining time would be under minimum, then the
 % last segment is max + remaining.
 
-max_length_mins = 15;
+max_length_mins = 13;
 min_length_mins = 5;
 %%
 logname = sprintf("analysis_log_%s.txt", datestr(now,'yyyymmdd_HHMMSS'));
@@ -720,7 +720,7 @@ writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
 writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
 writematrix(sum(all_CNN_durations,1)', excelfile,'Sheet',sheet_name,'Range','D11')
 
-total_noise = sum(all_noise_probs,1) ./ all_durations(1);
+total_noise = all_noise_probs ./ all_durations(1);
 writematrix(total_noise, excelfile,'Sheet',sheet_name,'Range','E11')
 
 % Write the combined FR/IED/SFR rates and percentages of occupancy
@@ -728,7 +728,7 @@ writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','F11');
 fprintf('Sheet "%s" in File "%s" is saved successfully ...\n\n', sheet_name, "detection_rates_pat" + subj_num + ".xls");
 
 excelfile = fullfile(data_dir, "noise_times_CNN_pat" + subj_num + ".xls");
-writematrix(CNN_timepoints,excelfile,'Range','A1');
+writematrix([CNN_timepoints_n,CNN_timepoints_probs],excelfile,'Range','A1');
 
 out = "The program has finished";
 end
