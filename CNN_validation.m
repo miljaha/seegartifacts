@@ -1,6 +1,6 @@
 %% load data
 
-subj_nums = [12];%,19,20,21,22,23,24,25,26,27,28,29,30,31,...
+subj_nums = [12,19,20,21];%,22,23,24,25,26,27,28,29,30,31,...
 %32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
 nSubjects = length(subj_nums);
 
@@ -58,9 +58,9 @@ all_patient_id_tp = []; % patient ID per timepoint, for clustering later
 for i = 1:length(valid_subjs) 
     if isempty(results(i).probs), continue; end % skip failed patients
     % timepoints
-    all_probs = [all_probs, results(i).probs];
-    all_artifactual = [all_artifactual, results(i).full_artifactual];
-    all_n_timepoints = [all_n_timepoints, results(i).n_timepoints];
+    all_probs = [all_probs; results(i).probs];
+    all_artifactual = [all_artifactual; results(i).full_artifactual];
+    all_n_timepoints = [all_n_timepoints; results(i).n_timepoints];
     all_patient_id_tp = [all_patient_id_tp, repmat(results(i).subj_num, 1, length(results(i).probs))];
 
     % channels
@@ -69,12 +69,105 @@ for i = 1:length(valid_subjs)
     all_patient_id_ch = [all_patient_id_ch, repmat(results(i).subj_num, 1, height(results(i).bad_flags))];
 end
 
-%%
+%% Detecting artefact timepoints with CNN on multichannel level
 truth_binary = all_artifactual > 0.5; % counts as artifact
-[X,Y,T,AUC] = perfcurve(truth_binary, all_probs, true);
-plot(X,Y); xlabel('False positive rate'); ylabel('True positive rate');
-title(sprintf('ROC AUC = %.3f', AUC));
+[n_timepoints_sorted, id] = sort(all_n_timepoints, 'descend');
+truth_sorted = truth_binary(id);
+cumulative_truth = cumsum(truth_sorted) / sum(truth_sorted);
+x = (1:length(truth_sorted)) / length(truth_sorted);
 
+% plot cumulative distrivution
+figure;
+subplot(1,2,1); hold on;
+yyaxis right
+plot(x, cumulative_truth);
+ylabel('Cumulative fraction of artefactual times');
+
+% reference line
+plot([0 1], [0 1], 'k--'); 
+
+% n of CNN bad channels at that time
+yyaxis left
+plot(x, n_timepoints_sorted)
+ylabel('Fraction of channels with artefact')
+
+legend("Portion of noisy channels","CDF of bad labels", "Uniformly spread")
+xlabel('Fraction of channels (sorted)');
+[r, p] = corr(n_timepoints_sorted, double(truth_sorted)); % correlation coefficient
+
+[X,Y,T,AUC] = perfcurve(truth_binary, all_n_timepoints, true); % ROC
+title(sprintf('Fraction of channels\nROC AUC = %.3f\nCorrelation coefficient %.3f, p=%.3g', AUC, r, p));
+
+% ------------- Total noise probability sum -------------
+[probs_sorted, id] = sort(all_probs, 'descend');
+truth_sorted = truth_binary(id);
+cumulative_truth = cumsum(truth_sorted) / sum(truth_sorted);
+
+subplot(1,2,2); hold on;
+yyaxis right
+plot(x, cumulative_truth);
+ylabel('Cumulative fraction of artefactual times');
+
+% reference line
+plot([0 1], [0 1], 'k--'); 
+
+% n of CNN bad channels at that time
+yyaxis left
+plot(x, probs_sorted)
+ylabel('Sum of noise probabilities')
+
+legend("Average noise score","CDF of bad labels", "Uniformly spread")
+xlabel('Fraction of channels (sorted)');
+[r, p] = corr(probs_sorted, double(truth_sorted)); % correlation coefficient
+
+[X,Y,T,AUC] = perfcurve(truth_binary, all_probs, true); % ROC
+title(sprintf('Sum of probabilities\nROC AUC = %.3f\nCorrelation coefficient %.3f, p=%.3g', AUC, r, p));
+
+%% Discriminating bad channels based on the CNN-removed total time per channel
+% sort the channels based on how much CNN flagged as artifactual
+[bad_idx_sorted,id] = sort(all_badchan_idx,'descend');
+bad_flags_sorted = all_bad_flags(id);
+% cumulative proportion of bad channels
+cumulative_bad = cumsum(bad_flags_sorted) / sum(bad_flags_sorted);
+x = (1:length(bad_flags_sorted)) / length(bad_flags_sorted);
+
+% plot: cumulative distribution
+figure; hold on;
+yyaxis right
+plot(x, cumulative_bad);
+ylabel('Cumulative fraction of bad channels');
+
+% reference line of random distibution
+plot([0 1], [0 1], 'k--'); 
+
+% corresponding removed time per channel
+yyaxis left
+plot(x, bad_idx_sorted);
+ylabel('Removed time index');
+
+legend("Index","CDF of bad labels", "Uniformly spread")
+xlabel('Fraction of channels (sorted)');
+[r, p] = corr(bad_idx_sorted, double(bad_flags_sorted)); % correlation coefficient
+
+[X,Y,T,AUC] = perfcurve(all_bad_flags, all_badchan_idx, true); % ROC
+title(sprintf('ROC AUC = %.3f\nCorrelation coefficient %.3f, p=%f', AUC, r, p));
+
+%% per subject
+% channel level
+AUC_per_patient = nan(length(valid_subjs),1);
+r_per_patient = nan(length(valid_subjs),1);
+
+for p = 1:length(valid_subjs)
+    idx = all_patient_id_ch == valid_subjs(p);
+    truth = double(all_bad_flags(idx));
+    pred = all_badchan_idx(idx);
+
+    [~,~,~,AUC_per_patient(p)] = perfcurve(truth, pred, true);
+    r_per_patient(p) = corr(pred, truth);
+end
+
+mean(AUC_per_patient, 'omitnan')
+std(AUC_per_patient, 'omitnan')
 %%
 function [full_artifactual, full_bad] = get_artefact_samples(subj_num, data_dir, data_files)
 
