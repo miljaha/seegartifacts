@@ -153,21 +153,68 @@ xlabel('Fraction of channels (sorted)');
 title(sprintf('ROC AUC = %.3f\nCorrelation coefficient %.3f, p=%f', AUC, r, p));
 
 %% per subject
-% channel level
-AUC_per_patient = nan(length(valid_subjs),1);
-r_per_patient = nan(length(valid_subjs),1);
+% allocate
+AUC_per_patient_badchan = nan(length(valid_subjs),1);
+r_per_patient_badchan = nan(length(valid_subjs),1);
+AUC_per_patient_ntimes = nan(length(valid_subjs),1);
+r_per_patient_ntimes = nan(length(valid_subjs),1);
+AUC_per_patient_probsum = nan(length(valid_subjs),1);
+r_per_patient_probsum = nan(length(valid_subjs),1);
 
 for p = 1:length(valid_subjs)
+    % bad channels, pick subject
     idx = all_patient_id_ch == valid_subjs(p);
     truth = double(all_bad_flags(idx));
-    pred = all_badchan_idx(idx);
+    bad = all_badchan_idx(idx);
+    % AUC and correlation
+    [~,~,~,AUC_per_patient_badchan(p)] = perfcurve(truth, bad, true);
+    r_per_patient_badchan(p) = corr(bad, truth);
 
-    [~,~,~,AUC_per_patient(p)] = perfcurve(truth, pred, true);
-    r_per_patient(p) = corr(pred, truth);
+    % timepoints
+    idx = all_patient_id_tp == valid_subjs(p);
+    truth = double(all_artifactual(idx));
+    truth = truth > 0.5;
+    [~,~,~,AUC_per_patient_ntimes(p)] = perfcurve(truth, all_n_timepoints(idx), true);
+    r_per_patient_ntimes(p) = corr(all_n_timepoints(idx), truth);
+
+    [~,~,~,AUC_per_patient_probsum(p)] = perfcurve(truth, all_probs(idx), true);
+    r_per_patient_probsum(p) = corr(all_probs(idx), truth);
 end
 
-mean(AUC_per_patient, 'omitnan')
-std(AUC_per_patient, 'omitnan')
+%% visualize AUC and r across patients
+
+figure('Position',[100 100 900 700]);
+
+% --- AUC subplot ---
+subplot(2,1,1);
+AUC_data = [AUC_per_patient_badchan, AUC_per_patient_ntimes, AUC_per_patient_probsum];
+labels = {'Bad channel idx','N timepoints','Prob sum'};
+
+boxplot(AUC_data, 'Labels', labels);
+hold on;
+for col = 1:3
+    x = col + (rand(length(valid_subjs),1)-0.5)*0.15; % jitter for visibility
+    scatter(x, AUC_data(:,col), 25, 'filled', 'MarkerFaceAlpha',0.5);
+end
+yline(0.5, 'k--', 'Chance'); % reference line
+ylabel('AUC');
+title('Per-patient AUC by predictor');
+ylim([0 1]);
+
+% --- r subplot ---
+subplot(2,1,2);
+r_data = [r_per_patient_badchan, r_per_patient_ntimes, r_per_patient_probsum];
+
+boxplot(r_data, 'Labels', labels);
+hold on;
+for col = 1:3
+    x = col + (rand(length(valid_subjs),1)-0.5)*0.15;
+    scatter(x, r_data(:,col), 25, 'filled', 'MarkerFaceAlpha',0.5);
+end
+yline(0, 'k--', 'No correlation');
+ylabel('Correlation (r)');
+title('Per-patient correlation by predictor');
+%% patient-wise boots
 %%
 function [full_artifactual, full_bad] = get_artefact_samples(subj_num, data_dir, data_files)
 
