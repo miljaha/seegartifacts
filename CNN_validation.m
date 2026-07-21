@@ -214,7 +214,35 @@ end
 yline(0, 'k--', 'No correlation');
 ylabel('Correlation (r)');
 title('Per-patient correlation by predictor');
-%% patient-wise boots
+%% patient-wise bootstrapping
+n_boot = 100; % n of draws
+boot_auc_ch = nan(n_boot,1); % auc score per draw
+boot_auc_prob = nan(n_boot,1); % auc score per draw
+boot_auc_n = nan(n_boot,1); % auc score per draw
+
+for b = 1:n_boot
+    sampled = valid_subjs(randi(length(valid_subjs),length(valid_subjs),1));
+    idx_ch = ismember(all_patient_id_ch, sampled);
+    idx_tp = ismember(all_patient_id_tp, sampled);
+
+    truth_ch = double(all_bad_flags(idx_ch));
+    pred_ch = all_badchan_idx(idx_ch);
+    [~,~,~,boot_auc_ch(b)] = perfcurve(truth_ch, pred_ch, true);
+
+    truth_tp = double(all_artifactual(idx_tp) > 0.5);
+    pred_n = all_n_timepoints(idx_tp);
+    [~,~,~,boot_auc_n(b)] = perfcurve(truth_tp, pred_n, true);
+    pred_prob = all_probs(idx_tp);
+    [~,~,~,boot_auc_prob(b)] = perfcurve(truth_tp, pred_prob, true);
+end
+
+CI_ch = prctile(boot_auc_ch, [2.5, 97.5]);
+CI_prob = prctile(boot_auc_prob, [2.5 97.5]);
+CI_n = prctile(boot_auc_n, [2.5 97.5]);
+
+fprintf("95%% CI for AUC for bad channels:[%.3f %.3f]\n",CI_ch(1), CI_ch(2));
+fprintf("95%% CI for AUC for n of channels:[%.3f %.3f]\n",CI_n(1), CI_n(2));
+fprintf("95%% CI for AUC for sum of noise probability:[%.3f %.3f]\n",CI_prob(1), CI_prob(2));
 %%
 function [full_artifactual, full_bad] = get_artefact_samples(subj_num, data_dir, data_files)
 
