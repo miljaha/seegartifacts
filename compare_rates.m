@@ -45,7 +45,7 @@ for i = 1:nSubjects
         T.badchannels = T.badchannels(~isnan(table2array(T.badchannels)),1);
         
         % ignore occupancies
-        T.rates = T.rates(:,5:4+nMetrics*nBiomarkers); 
+        T.rates = T.rates(:,6:4+nMetrics*nBiomarkers); 
         
         % gather information
         All_patients.("Pat"+string(subj_nums(i))) = T;
