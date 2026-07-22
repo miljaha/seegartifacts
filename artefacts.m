@@ -2,10 +2,9 @@
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30];
+subj_nums = [22];
 %[12,19,20,21,22,23,24,25,26,27,28,29,30];
-%,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject number
-% 51, 54, 55 ja 57 odottaa Päivin merkintöjä
+%,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
 
 % Maximum and minumum length of data procesed at once. You can edit these
 % depending on the computer you use, longer max length of segment makes the
@@ -281,6 +280,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
             fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
             %% Use CNN to find alternative artefacts
+            if ~looped_already % only if this segment is not processed already
             fprintf(2,"=====    Classify segments using CNN    ======\n")
 
             windowSize = fs*3; % samples per segment 
@@ -314,6 +314,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             all_noise_probs = all_noise_probs + sum(noise_probs,1)';
             CNN_timepoints_probs = [CNN_timepoints_probs; sum(noise_probs,2)];
             CNN_timepoints_n = [CNN_timepoints_n; sum(CNN_artifacts,2)];
+            end
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
