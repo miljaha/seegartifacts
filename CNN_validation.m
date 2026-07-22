@@ -1,19 +1,33 @@
-%% load data
-
-subj_nums = [12,19,20,21];%,22,23,24,25,26,27,28,29,30,31,...
-%32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
+%% load data (with caching)
+subj_nums = [12,19,20,21,22,23,24,25,26,31,32,34,35,36];
 nSubjects = length(subj_nums);
 
-results = struct(); % preallocate struct array
-valid_subjs = [];
+cache_file = "/projects3/EPIHFO/EPIHFO/patient_results_cache.mat";
+
+% load existing cache if it exists
+if isfile(cache_file)
+    loaded = load(cache_file, 'results_cache');
+    results_cache = loaded.results_cache;
+    fprintf("Loaded cache with %d existing patients\n", length(results_cache));
+else
+    results_cache = struct('subj_num', {}, 'n_timepoints', {}, 'probs', {}, ...
+        'full_artifactual', {}, 'bad_flags', {}, 'badchan_idx', {}, 'nChans', {});
+    fprintf("No cache found, starting fresh\n");
+end
+
+cached_subj_nums = [results_cache.subj_num]; % list of subj_nums already done
 
 for i = 1:nSubjects
+    if ismember(subj_nums(i), cached_subj_nums)
+        fprintf("Subject %d already cached, skipping\n", subj_nums(i));
+        continue;
+    end
+    
     try
         filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/noise_times_CNN_pat"+string(subj_nums(i))+".xls";
         T = readtable(filename);
-        n_timepoints = T{:,1}; % first col
-        probs = T{:,2}; % 2nd col
-        
+        n_timepoints = T{:,1};
+        probs = T{:,2};
         filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i)) + "/detection_rates_pat"+string(subj_nums(i))+".xls";
         badchannels = readtable(filename,"Sheet", "files combined", "Range","C11:E200",'VariableNamingRule','preserve');
         bad_flags = table2array(badchannels(:,1));
@@ -21,31 +35,35 @@ for i = 1:nSubjects
         bad_flags = bad_flags(~isnan(bad_flags));
         badchan_idx = badchan_idx(~isnan(badchan_idx));
         nChans = size(badchan_idx,1);
-
         n_timepoints = n_timepoints/nChans;
         probs = probs / nChans;
-       
         data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
-        edfFiles = {""}; % automatic selection
-        
-        % full_artifactual = artifacts, full bad = artifacts + seizures
+        edfFiles = {""};
         [full_artifactual, full_bad] = get_artefact_samples(subj_nums(i),data_dir,edfFiles);
-        full_artifactual = full_artifactual(1:size(n_timepoints,1)); % remove awake time
-        results(i).subj_num = subj_nums(i);
-        results(i).n_timepoints = n_timepoints; % 1 x nTimepoints_i
-        results(i).probs = probs;               % 1 x nTimepoints_i
-        results(i).full_artifactual = full_artifactual; % 1 x nTimepoints_i
-        results(i).bad_flags = bad_flags;        % 1 x nChans_i
-        results(i).badchan_idx = badchan_idx;    % 1 x nChans_i
-        results(i).nChans = nChans;
-
-        valid_subjs = [valid_subjs; subj_nums(i)];
-
+        full_artifactual = full_artifactual(1:size(n_timepoints,1));
+        fprintf(2,"full artefactual adjustemt done \n")
+        % append new patient to cache struct array
+        newEntry.subj_num = subj_nums(i);
+        newEntry.n_timepoints = n_timepoints;
+        newEntry.probs = probs;
+        newEntry.full_artifactual = full_artifactual;
+        newEntry.bad_flags = bad_flags;
+        newEntry.badchan_idx = badchan_idx;
+        newEntry.nChans = nChans;
+        
+        results_cache(end+1) = newEntry;
+        
+        fprintf("Processed and cached subject %d\n", subj_nums(i));
+        
+        % save after every patient - if it crashes partway, you don't lose earlier progress
+        save(cache_file, 'results_cache');
+        
     catch ME
-        fprintf("Problem in reading data from subject %d, skipping this subject\n", subj_nums(i))
+        fprintf("Problem in reading data from subject %d, skipping this subject: %s\n", subj_nums(i), ME.message)
     end
 end
 
+valid_subjs = [results_cache.subj_num]';
 %% read data to flat
 all_probs = [];
 all_artifactual = [];
@@ -56,17 +74,17 @@ all_patient_id_ch = []; % ID per channel
 all_patient_id_tp = []; % patient ID per timepoint, for clustering later
 
 for i = 1:length(valid_subjs) 
-    if isempty(results(i).probs), continue; end % skip failed patients
+    if isempty(results_cache(i).probs), continue; end % skip failed patients
     % timepoints
-    all_probs = [all_probs; results(i).probs];
-    all_artifactual = [all_artifactual; results(i).full_artifactual];
-    all_n_timepoints = [all_n_timepoints; results(i).n_timepoints];
-    all_patient_id_tp = [all_patient_id_tp, repmat(results(i).subj_num, 1, length(results(i).probs))];
+    all_probs = [all_probs; results_cache(i).probs];
+    all_artifactual = [all_artifactual; results_cache(i).full_artifactual];
+    all_n_timepoints = [all_n_timepoints; results_cache(i).n_timepoints];
+    all_patient_id_tp = [all_patient_id_tp, repmat(results_cache(i).subj_num, 1, length(results_cache(i).probs))];
 
     % channels
-    all_bad_flags = [all_bad_flags; results(i).bad_flags]; % table, vertical concat
-    all_badchan_idx = [all_badchan_idx; results(i).badchan_idx];
-    all_patient_id_ch = [all_patient_id_ch, repmat(results(i).subj_num, 1, height(results(i).bad_flags))];
+    all_bad_flags = [all_bad_flags; results_cache(i).bad_flags]; % table, vertical concat
+    all_badchan_idx = [all_badchan_idx; results_cache(i).badchan_idx];
+    all_patient_id_ch = [all_patient_id_ch, repmat(results_cache(i).subj_num, 1, height(results_cache(i).bad_flags))];
 end
 
 %% Detecting artefact timepoints with CNN on multichannel level
@@ -196,6 +214,7 @@ for col = 1:3
     x = col + (rand(length(valid_subjs),1)-0.5)*0.15; % jitter for visibility
     scatter(x, AUC_data(:,col), 25, 'filled', 'MarkerFaceAlpha',0.5);
 end
+grid on;
 yline(0.5, 'k--', 'Chance'); % reference line
 ylabel('AUC');
 title('Per-patient AUC by predictor');
@@ -211,11 +230,12 @@ for col = 1:3
     x = col + (rand(length(valid_subjs),1)-0.5)*0.15;
     scatter(x, r_data(:,col), 25, 'filled', 'MarkerFaceAlpha',0.5);
 end
+grid on;
 yline(0, 'k--', 'No correlation');
 ylabel('Correlation (r)');
 title('Per-patient correlation by predictor');
 %% patient-wise bootstrapping
-n_boot = 100; % n of draws
+n_boot = 1000; % n of draws
 boot_auc_ch = nan(n_boot,1); % auc score per draw
 boot_auc_prob = nan(n_boot,1); % auc score per draw
 boot_auc_n = nan(n_boot,1); % auc score per draw
@@ -384,26 +404,22 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
         % Search for seziure samples in the file and gather buffered seizure timestamps from events
-        [seizure_samples, ~, ~] = extract_seizure_locations(events, N, fs, ...
-            seizure_time_overflow_start, seizure_time_overflow_end, ...
-            looped_already, sample_window(1,idx), sample_window(2,idx));
-        both_samples = merge_intervals(seizure_samples, artefact_samples);
+  
 
         % create 3s segment artifacts
         windowSize = fs*3; % samples per segment 
         numSegments = floor((N - windowSize) / windowSize)+1;
         
         artifactual = zeros(numSegments,1);
-        baddata = zeros(numSegments,1);
         
         for i = 1:numSegments
             % absolute sample range of this segment
             segStart = sample_window(1)+(i-1)*windowSize;
             segEnd   = segStart + windowSize - 1;
             
-            if isempty(both_samples)
+            if isempty(artefact_samples)
                 artifactual(i) = 0;
-                baddata(i) = 0;
+           
                 continue;
             end
             
@@ -417,15 +433,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             % fraction of segment that is artefact (0 to 1)
             artifactual(i) = sum(overlap_lengths) / windowSize;
 
-            % overlap between this segment and each artefact+seizure interval
-            intersect_start = max(segStart, both_samples(:,1));
-            intersect_end   = min(segEnd, both_samples(:,2));
-
-            valid = intersect_end > intersect_start;
-            overlap_lengths = intersect_end(valid) - intersect_start(valid);
-            
-            % fraction of segment that is artefact (0 to 1)
-            baddata(i) = sum(overlap_lengths) / windowSize;
         end
 
         handle_file = false;
@@ -435,7 +442,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             disp([newline '--- Seizure time overflows to previous file, reaccessing it ---' newline]);
         end
     end
-    full_bad = [full_bad; baddata];
     full_artifactual = [full_artifactual; artifactual];
 end
 
