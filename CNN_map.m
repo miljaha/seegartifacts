@@ -198,8 +198,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         bad_channel_idx = ismember(lower(bipolar_labels), badchans);
         % Manually marked artefacts & seizures
         artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
-        shift = shift + size(data_original,1);
         artefact_samples = artefact_samples + shift;
+        shift = shift + size(data_original,1);
         % Only saves the end overflow if not rehandling prior file
         % (overflows at end -> Goes to NEXT file)
         % Extract the samples of interest
@@ -208,6 +208,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         artifact_samples_all = [artifact_samples_all; artefact_samples];
         %for s = 1:size(sample_window_max,2)
             %data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
+           
             fprintf("Length of data: %.2f min\n", (size(data_original,1))/fs/60);
             %% Use CNN to find alternative artefacts
             fprintf(2,"=====    Classify segments using CNN    ======\n")
@@ -240,7 +241,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
          
            % fprintf(2,"===== Moving to next segment =====\n")
         %end
-
+         
         %% Check if need to redo previous file
         handle_file = false;
         if seizure_time_overflow_start > 0 && ~looped_already && idx > 1
@@ -253,6 +254,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 end
 
 excelfile = fullfile(data_dir, "CNN_map_pat" + subj_num + ".xlsx");
+
 if isfile(excelfile)
     delete(excelfile); % start fresh each run
 end
