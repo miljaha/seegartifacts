@@ -1,4 +1,6 @@
-subj_num = 41; % subject number
+
+
+subj_num = 12; % subject number
 data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
 fs = 2048;
 windowSize = 3*fs;
@@ -13,6 +15,9 @@ len_samples = sum(sample_window(2,:)) - sample_window(1,1);
 e = floor(len_samples/windowSize)+1;
 CNN_probabilities_cut = CNN_probabilities_fromexcel(:,s:e);
 
+filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates_pat"+string(subj_num)+".xls";
+badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
+%badchannels(71) = 0;
 % shift artefact samples to be relative to analysis start
 artefact_samples_shifted = artefact_samples - sample_window(1);
 
@@ -46,9 +51,15 @@ for i = 1:size(artefact_segments_shifted,1)
     art_start_sec = artefact_segments_shifted(i,1) * 3; % convert segment -> seconds
     art_end_sec   = artefact_segments_shifted(i,2) * 3;
     
-    patch([art_start_sec art_end_sec art_end_sec art_start_sec], ...
+    a = patch([art_start_sec art_end_sec art_end_sec art_start_sec], ...
          [0.5 0.5 nChannels+0.5 nChannels+0.5], ...
          'cyan', 'FaceAlpha', 0.25, 'EdgeColor', 'none');
 end
 
-legend('Artifact region', 'Location', 'best');
+% add red lines for bad channels
+bad_chan_idx = find(badchannels == 1); % row indices of bad channels
+for ch = bad_chan_idx'
+    b = yline(ch, 'r-', 'LineWidth', 1);
+end
+
+legend([a,b],{'Artefact','Bad channel'}, 'Location', 'best');
