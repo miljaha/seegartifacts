@@ -1,5 +1,12 @@
+%% remove from cache if necessary
+subjects_to_remove = [25,38,41,42,45,46,48,50,51,52,53,54,55,56,57,58,59,60]; % whichever ones you want gone
+
+cached_subj_nums = [results_cache.subj_num]; % rebuild in case it's stale
+results_cache(ismember(cached_subj_nums, subjects_to_remove)) = [];
+save(cache_file, 'results_cache');
+
 %% load data (with caching)
-subj_nums = [12,19,20,21,22,23,24,25,26,31,32,34,35,36];
+subj_nums = [12,19,20,21,23,24,25,26,28,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];
 nSubjects = length(subj_nums);
 
 cache_file = "/projects3/EPIHFO/EPIHFO/patient_results_cache.mat";
@@ -183,20 +190,22 @@ for p = 1:length(valid_subjs)
     % bad channels, pick subject
     idx = all_patient_id_ch == valid_subjs(p);
     truth = double(all_bad_flags(idx));
-    bad = all_badchan_idx(idx);
-    % AUC and correlation
-    [~,~,~,AUC_per_patient_badchan(p)] = perfcurve(truth, bad, true);
-    r_per_patient_badchan(p) = corr(bad, truth);
-
-    % timepoints
-    idx = all_patient_id_tp == valid_subjs(p);
-    truth = double(all_artifactual(idx));
-    truth = truth > 0.5;
-    [~,~,~,AUC_per_patient_ntimes(p)] = perfcurve(truth, all_n_timepoints(idx), true);
-    r_per_patient_ntimes(p) = corr(all_n_timepoints(idx), truth);
-
-    [~,~,~,AUC_per_patient_probsum(p)] = perfcurve(truth, all_probs(idx), true);
-    r_per_patient_probsum(p) = corr(all_probs(idx), truth);
+    if sum(truth) > 0
+        bad = all_badchan_idx(idx);
+        % AUC and correlation
+        [~,~,~,AUC_per_patient_badchan(p)] = perfcurve(truth, bad, true);
+        r_per_patient_badchan(p) = corr(bad, truth);
+    
+        % timepoints
+        idx = all_patient_id_tp == valid_subjs(p);
+        truth = double(all_artifactual(idx));
+        truth = truth > 0.5;
+        [~,~,~,AUC_per_patient_ntimes(p)] = perfcurve(truth, all_n_timepoints(idx), true);
+        r_per_patient_ntimes(p) = corr(all_n_timepoints(idx), truth);
+    
+        [~,~,~,AUC_per_patient_probsum(p)] = perfcurve(truth, all_probs(idx), true);
+        r_per_patient_probsum(p) = corr(all_probs(idx), truth);
+    end
 end
 
 %% visualize AUC and r across patients
