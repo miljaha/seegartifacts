@@ -1,7 +1,7 @@
 %% define variables
 
 subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,...
-32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48];%,50,52,53,56,58,59,60];         % Subject numbers
+32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,52,53,56,58,59,60];         % Subject numbers
 
 sub_block = {'Original','Manual','CNN'};
 sub_hdr = [{'Channel number','Label','Bad channel','Duration after CNN'} repmat(sub_block, 1, 12)];
@@ -107,7 +107,18 @@ for b = 1:nBiomarkers
     
     results(b,:) = {biomarkers(b), median(diff,'omitnan'), ci, is_equivalent1, is_equivalent2};
 end
+%% metrics
+means = mean(diffs_all,2);
+sds = std(diffs_all);
+skews = skewness(diffs_all,2);
+coeff_vars = means ./ sds;
+ses = sds ./ sqrt(length(diffs_all));
 
+res = table(6,7);
+res(1,2:7) = biomarkers;
+res(2:6,1) = {"Mean";"SD";"Skewness";"Coefficent of variance"; "SE"};
+res(2:6,2:7) = {means; sds;skews;coeff_vars;ses};
+disp(res);
 %% plot histograms of differences
 nChannels = size(diffs_all,1);
 figure;
@@ -120,3 +131,8 @@ for i = 1:nBiomarkers
     ylabel('Count');
     xlim([-10,10]);
 end
+
+%%
+allChannelsArray = All_channels{:,:};  % assuming All_channels is a table
+nanRows = any(isnan(allChannelsArray), 2);
+subjectsWithNan = unique(subj_idx(nanRows));
