@@ -6,7 +6,7 @@ results_cache(ismember(cached_subj_nums, subjects_to_remove)) = [];
 save(cache_file, 'results_cache');
 
 %% load data (with caching)
-subj_nums = [12,19,20,21,23,24,25,26,28,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];
 nSubjects = length(subj_nums);
 
 cache_file = "/projects3/EPIHFO/EPIHFO/patient_results_cache.mat";
@@ -240,6 +240,7 @@ for col = 1:3
     scatter(x, r_data(:,col), 25, 'filled', 'MarkerFaceAlpha',0.5);
 end
 grid on;
+ylim([-1,1])
 yline(0, 'k--', 'No correlation');
 ylabel('Correlation (r)');
 title('Per-patient correlation by predictor');
@@ -294,7 +295,7 @@ else
 end
 
 % Define the datetime range as {sleep start, sleep start + 1h}
-T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
+T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs3.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
