@@ -1,8 +1,12 @@
 % full night cnn artifacts for one subject
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60]; % subject number
+subj_nums = [22,24]; % subject number
+% done
+% 12,19,20,21,22,23,24,25,26,27,28,29
 
+% undone
+% ,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60
 for subj_num = subj_nums
-    try
+   % try
     fprintf(2,"\n------ Starting subject %d ------\n\n",subj_num)
     % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
     data_files = {""}; % if empty it evokes automatic data file selection
@@ -142,7 +146,8 @@ for subj_num = subj_nums
     
     load('convnet.mat') 
     
-    CNN_probabilities = zeros(0,0);
+    CNN_probabilities_resized = zeros(0,0);
+    CNN_probabilities_15000 = zeros(0,0);
     artifact_samples_all = [];
     shift = 0;
     %
@@ -199,18 +204,47 @@ for subj_num = subj_nums
                 startIdx = (i-1)*step + 1; 
                 endIdx = startIdx + windowSize - 1;
                 segment_raw = signal(startIdx:endIdx); 
+                raw_resized = imresize(segment', [1,15000]); 
+                segment = zeros(5, 15000); % Lowpass (≤900 Hz) 
+                segment(1,:) = zscore(filtfilt(b,a,raw_resized)); %Bandpass envelopes 
+                segment(2,:) = zscore(BpPowerEnvelope(raw_resized, 20, 100, fs)); 
+                segment(3,:) = zscore(BpPowerEnvelope(raw_resized, 80, 250, fs)); 
+                segment(4,:) = zscore(BpPowerEnvelope(raw_resized, 200, 600, fs)); 
+                segment(5,:) = zscore(BpPowerEnvelope(raw_resized, 500, 900, fs)); 
+                
+                [label,probs] = classify(convnet, segment); 
+                noise_probs(ch,i) = probs(1);
+            end 
+        end
+
+
+        CNN_probabilities_resized = [CNN_probabilities_resized, noise_probs];
+
+        windowSize = 15000; % samples per segment 
+        overlap = 10000; % 
+        step = windowSize - overlap; 
+        numSegments = floor((size(data_original,1) - windowSize) / step)+1;
+        [b,a] = butter(3, 900/(0.5*fs), 'low');
+        noise_probs = zeros(size(data_original,2),numSegments);
+        for ch = 1:size(data_original, 2) % loop through channels (158) 
+            signal = data_original(:, ch); 
+            for i = 1:numSegments 
+                startIdx = (i-1)*step + 1; 
+                endIdx = startIdx + windowSize - 1;
+                segment_raw = signal(startIdx:endIdx); 
                 segment = zeros(5, windowSize); % Lowpass (≤900 Hz) 
                 segment(1,:) = zscore(filtfilt(b,a,segment_raw)); %Bandpass envelopes 
                 segment(2,:) = zscore(BpPowerEnvelope(segment_raw, 20, 100, fs)); 
                 segment(3,:) = zscore(BpPowerEnvelope(segment_raw, 80, 250, fs)); 
                 segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
                 segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
-                img = imresize(segment, convnet.Layers(1).InputSize(1:2)); 
-                [label,probs] = classify(convnet, img); 
+                
+                [label,probs] = classify(convnet, segment); 
                 noise_probs(ch,i) = probs(1);
             end 
         end
-        CNN_probabilities = [CNN_probabilities, noise_probs];
+        CNN_probabilities_15000 = [CNN_probabilities_15000, noise_probs];
+
         clear data;
     end
     %%
@@ -224,15 +258,15 @@ for subj_num = subj_nums
     badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
     badchannels = badchannels(~isnan(badchannels));
     
-    CNNresults = struct('CNN_map',CNN_probabilities,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
+    CNNresults = struct('CNN_map_resized',CNN_probabilities_resized,'CNN_map_15000',CNN_probabilities_15000,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
     
-    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num)),'CNNresults');
+    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num)),'CNNresults_new');
     fprintf("\n --------- Subject %d saved ---------\n", subj_num)
     
-    catch ME
-       fprintf("!!! ERROR for subject %d !!!\n", subj_num);
-       fprintf("Message: %s\n", ME.message);
-       fprintf("Continuing to next subject...\n\n");
-    end
+    %catch ME
+     %  fprintf("!!! ERROR for subject %d !!!\n", subj_num);
+     %  fprintf("Message: %s\n", ME.message);
+     %  fprintf("Continuing to next subject...\n\n");
+   % end
 end
 out = "The program has finished";
