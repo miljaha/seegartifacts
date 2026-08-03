@@ -1,5 +1,5 @@
 % full night cnn artifacts for one subject
-subj_nums = [22,24]; % subject number
+subj_nums = [23,25,26,27]; %22 done % subject number
 % done
 % 12,19,20,21,22,23,24,25,26,27,28,29
 
@@ -146,8 +146,7 @@ for subj_num = subj_nums
     
     load('convnet.mat') 
     
-    CNN_probabilities_resized = zeros(0,0);
-    CNN_probabilities_15000 = zeros(0,0);
+    CNN_probabilities= zeros(0,0);
     artifact_samples_all = [];
     shift = 0;
     %
@@ -191,35 +190,46 @@ for subj_num = subj_nums
         %% Use CNN to find alternative artefacts
         fprintf(2,"=====    Classify segments using CNN    ======\n")
     
-        windowSize = fs*3; % samples per segment 
+        new_fs = 5000;
+        windowSize = new_fs*3; % samples per segment 
         overlap = 0; % 
         step = windowSize - overlap; 
-        numSegments = floor((size(data_original,1) - windowSize) / step)+1;
-        [b,a] = butter(3, 900/(0.5*fs), 'low');
+        numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
+        [b,a] = butter(3, 900/(0.5*new_fs), 'low');
         noise_probs = zeros(size(data_original,2),numSegments);
-     
+      
         for ch = 1:size(data_original, 2) % loop through channels (158) 
-            signal = data_original(:, ch); 
+            broad = resample(filtfilt(b,a,data_original(:,ch)),new_fs,fs);
+            beta = resample(BpPowerEnvelope(data_original(:,ch), 20, 100, fs),new_fs,fs);
+            gamma = resample(BpPowerEnvelope(data_original(:,ch), 80, 250, fs),new_fs,fs);
+            high = resample(BpPowerEnvelope(data_original(:,ch), 200, 600, fs),new_fs,fs);
+            ultrahigh = resample(BpPowerEnvelope(data_original(:,ch), 500, 900, fs),new_fs,fs);
             for i = 1:numSegments 
                 startIdx = (i-1)*step + 1; 
                 endIdx = startIdx + windowSize - 1;
-                segment_raw = signal(startIdx:endIdx); 
-                raw_resized = imresize(segment', [1,15000]); 
+                % segment_raw = signal(startIdx:endIdx);
+                %segment_resampled = resample(segment_raw,new_fs,fs);
+                %{
                 segment = zeros(5, 15000); % Lowpass (≤900 Hz) 
-                segment(1,:) = zscore(filtfilt(b,a,raw_resized)); %Bandpass envelopes 
-                segment(2,:) = zscore(BpPowerEnvelope(raw_resized, 20, 100, fs)); 
-                segment(3,:) = zscore(BpPowerEnvelope(raw_resized, 80, 250, fs)); 
-                segment(4,:) = zscore(BpPowerEnvelope(raw_resized, 200, 600, fs)); 
-                segment(5,:) = zscore(BpPowerEnvelope(raw_resized, 500, 900, fs)); 
-                
+                segment(1,:) = zscore(filtfilt(b,a,segment_resampled)); %Bandpass envelopes 
+                segment(2,:) = zscore(BpPowerEnvelope(segment_resampled, 20, 100, new_fs)); 
+                segment(3,:) = zscore(BpPowerEnvelope(segment_resampled, 80, 250, new_fs)); 
+                segment(4,:) = zscore(BpPowerEnvelope(segment_resampled, 200, 600, new_fs)); 
+                segment(5,:) = zscore(BpPowerEnvelope(segment_resampled, 500, 900, new_fs)); 
+                %}
+                segment(1,:) = zscore(broad(startIdx:endIdx)); %Bandpass envelopes 
+                segment(2,:) = zscore(beta(startIdx:endIdx)); 
+                segment(3,:) = zscore(gamma(startIdx:endIdx)); 
+                segment(4,:) = zscore(high(startIdx:endIdx)); 
+                segment(5,:) = zscore(ultrahigh(startIdx:endIdx)); 
                 [label,probs] = classify(convnet, segment); 
                 noise_probs(ch,i) = probs(1);
             end 
         end
 
 
-        CNN_probabilities_resized = [CNN_probabilities_resized, noise_probs];
-
+        CNN_probabilities= [CNN_probabilities, noise_probs];
+        %{
         windowSize = 15000; % samples per segment 
         overlap = 10000; % 
         step = windowSize - overlap; 
@@ -244,6 +254,7 @@ for subj_num = subj_nums
             end 
         end
         CNN_probabilities_15000 = [CNN_probabilities_15000, noise_probs];
+        %}
 
         clear data;
     end
@@ -258,9 +269,9 @@ for subj_num = subj_nums
     badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
     badchannels = badchannels(~isnan(badchannels));
     
-    CNNresults = struct('CNN_map_resized',CNN_probabilities_resized,'CNN_map_15000',CNN_probabilities_15000,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
+    CNNresults = struct('CNN_map',CNN_probabilities,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
     
-    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num)),'CNNresults_new');
+    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num))+'_new','CNNresults');
     fprintf("\n --------- Subject %d saved ---------\n", subj_num)
     
     %catch ME
@@ -270,3 +281,19 @@ for subj_num = subj_nums
    % end
 end
 out = "The program has finished";
+%% 
+figure;
+subplot(2,1,1)
+t_raw = linspace(0,100,6144);
+plot(t_raw,segment_raw); hold on;
+t_res = linspace(0,100,15000);
+plot(t_res,segment_resampled);
+legend("Raw","resampled")
+
+subplot(2,1,2); hold on;
+[pxx, f] = pwelch(segment_raw,[],[],[],fs);
+plot(f, pxx);
+[pxx, f] = pwelch(segment_resampled,[],[],[],new_fs);
+plot(f, pxx);
+
+legend("Raw","resampled")
