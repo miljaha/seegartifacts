@@ -1,17 +1,15 @@
 % full night cnn artifacts for one subject
-subj_nums = [23,25,26,27]; %22 done % subject number
+subj_nums = [22]; %22 done % subject number
+load('convnet.mat') 
 % done
-% 12,19,20,21,22,23,24,25,26,27,28,29
-
+% 12,19,20,21,22,23,24,25,26,27,28,2
 % undone
 % ,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60
 for subj_num = subj_nums
    % try
     fprintf(2,"\n------ Starting subject %d ------\n\n",subj_num)
-    % user_datetime_range = {"01-Nov-2019 12:14:19","01-Nov-2019 13:03:17"}; % if any entry is empty earliest/latest available datetime will be selected
     data_files = {""}; % if empty it evokes automatic data file selection
-    % Function calling
-    %data_dir = "C:\Data\Pat" + string(subj_num) + "Stimulation_data";
+
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
    
     %
@@ -144,7 +142,7 @@ for subj_num = subj_nums
     start_datetime.Format = datetime_format;
     end_datetime.Format   = datetime_format;
     
-    load('convnet.mat') 
+  
     
     CNN_probabilities= zeros(0,0);
     artifact_samples_all = [];
@@ -196,9 +194,9 @@ for subj_num = subj_nums
         step = windowSize - overlap; 
         numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
         [b,a] = butter(3, 900/(0.5*new_fs), 'low');
-        noise_probs = zeros(size(data_original,2),numSegments);
+        noise_probs = zeros(size(data_original,2),numSegments,3);
       
-        for ch = 1:size(data_original, 2) % loop through channels (158) 
+        for ch = 15:40%1:size(data_original, 2) % loop through channels (158) 
             broad = resample(filtfilt(b,a,data_original(:,ch)),new_fs,fs);
             beta = resample(BpPowerEnvelope(data_original(:,ch), 20, 100, fs),new_fs,fs);
             gamma = resample(BpPowerEnvelope(data_original(:,ch), 80, 250, fs),new_fs,fs);
@@ -222,8 +220,11 @@ for subj_num = subj_nums
                 segment(3,:) = zscore(gamma(startIdx:endIdx)); 
                 segment(4,:) = zscore(high(startIdx:endIdx)); 
                 segment(5,:) = zscore(ultrahigh(startIdx:endIdx)); 
-                [label,probs] = classify(convnet, segment); 
-                noise_probs(ch,i) = probs(1);
+              
+                probs = predict(convnet, segment); 
+                noise_probs(ch,i,1) = probs(1);
+                noise_probs(ch,i,2) = probs(2);
+                noise_probs(ch,i,3) = probs(3);
             end 
         end
 
@@ -271,7 +272,7 @@ for subj_num = subj_nums
     
     CNNresults = struct('CNN_map',CNN_probabilities,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
     
-    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num))+'_new','CNNresults');
+    save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num))+'_new2','CNNresults');
     fprintf("\n --------- Subject %d saved ---------\n", subj_num)
     
     %catch ME
