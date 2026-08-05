@@ -1,8 +1,9 @@
-% Multi-Subject Utility
+%%Multi-Subject Utility
 % % Input Parameters
 
 % Subjects to be analysed in a loop
-subj_nums = [22];
+subj_nums = [22,27,29,30];
+
 %[12,19,20,21,22,23,24,25,26,27,28,29,30];
 %,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
 
@@ -22,18 +23,18 @@ diary(logname);
 diary on;
 % Function calling in a loop
 for i = 1:length(subj_nums)
-    try
+    %try
         fprintf("Starting subject %d\n",subj_nums(i))
         data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_nums(i));
         edfFiles = {""}; % automatic selection
         z = run_detections(subj_nums(i), data_dir, ...
             edfFiles,max_length_mins, min_length_mins);
         fprintf("Subject %d complete, moving to next subject\n",subj_nums(i))
-    catch ME
-        fprintf("!!! ERROR for subject %d !!!\n", subj_nums(i));
-        fprintf("Message: %s\n", ME.message);
-        fprintf("Continuing to next subject...\n\n");
-    end   
+    %catch ME
+       % fprintf("!!! ERROR for subject %d !!!\n", subj_nums(i));
+        %%fprintf("Message: %s\n", ME.message);
+        %fprintf("Continuing to next subject...\n\n");
+   % end   
 end
 fprintf("\nAll subjects analysed! :)\n")
 diary off;
@@ -75,7 +76,7 @@ end
 
 % Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
-T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs2.xlsx");
+T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs3.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
@@ -418,7 +419,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         for i = 1:size(seizure_samples,1)
             s = seizure_samples(i,1);
             e = seizure_samples(i,2);
-            seizure_mask(s:e) = true;
+            seizure_mask(max(s,1):min(e,size(seizure_mask,1))) = true;
         end
         sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
         clean_mask = ~sample_wise_artifacts & ~seizure_mask;
@@ -496,6 +497,53 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             GS_occupancy_rate(j,1) = (sum(GS_all(GS_all(:,1) == j, 4))/fs)/duration_original;
             GS_occupancy_rate(j,2) = (sum(GS_both_removed_all(GS_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
             GS_occupancy_rate(j,3) = (sum(GS_CNN_removed_all(GS_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % if duration is 0 
+            if duration_original == 0
+                FR_appear_rate(j,1) = 0;
+                FR_occupancy_rate(j,1) = 0;
+                R_appear_rate(j,1) = 0;
+                R_occupancy_rate(j,1) = 0;
+                IED_appear_rate(j,1) = 0;
+                IED_occupancy_rate(j,1) = 0;
+                SFR_appear_rate(j,1) = 0;
+                SFR_occupancy_rate(j,1) = 0;
+                SRipples_appear_rate(j,1) = 0;
+                SRipples_occupancy_rate(j,1) = 0;
+                GS_appear_rate(j,1) = 0;
+                GS_occupancy_rate(j,1) = 0;
+            end
+
+            if duration_both_removed == 0
+                FR_appear_rate(j,2) = 0;
+                FR_occupancy_rate(j,2) = 0;
+                R_appear_rate(j,2) = 0;
+                R_occupancy_rate(j,2) = 0;
+                IED_appear_rate(j,2) = 0;
+                IED_occupancy_rate(j,2) = 0;
+                SFR_appear_rate(j,2) = 0;
+                SFR_occupancy_rate(j,2) = 0;
+                SRipples_appear_rate(j,2) = 0;
+                SRipples_occupancy_rate(j,2) = 0;
+                GS_appear_rate(j,2) = 0;
+                GS_occupancy_rate(j,2) = 0;
+            end
+
+            if duration_CNN_removed == 0
+                FR_appear_rate(j,3) = 0;
+                FR_occupancy_rate(j,3) = 0;
+                R_appear_rate(j,3) = 0;
+                R_occupancy_rate(j,3) = 0;
+                IED_appear_rate(j,3) = 0;
+                IED_occupancy_rate(j,3) = 0;
+                SFR_appear_rate(j,3) = 0;
+                SFR_occupancy_rate(j,3) = 0;
+                SRipples_appear_rate(j,3) = 0;
+                SRipples_occupancy_rate(j,3) = 0;
+                GS_appear_rate(j,3) = 0;
+                GS_occupancy_rate(j,3) = 0;
+            end
+
 
         end
         % Make sure that nan entries (duration = 0) are zero
