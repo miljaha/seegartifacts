@@ -49,7 +49,7 @@ end
 
 % Define the datetime range as {sleep start, sleep start + 1h}
 fprintf(2,'\n======                        Checking the datetime range                       ======\n');
-T = readtable("EPIHFO_start_end_times_badChannels_Milja.xlsx");
+T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs3.xlsx");
 startTime = T.SleepStart(find(T.PatNRo == subj_num));   % find time from table
 startTime = datestr(startTime, 'HH:MM:SS');
 hdr = MemReadEDF(fullfile(data_dir, edf_filename(1)));
@@ -254,6 +254,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             data.x_bip = data_original(:,sample_window_max(1,s):sample_window_max(2,s))';
             fprintf("Length of data: %.2f min\n", (size(data.x_bip,1))/fs/60);
             %% Use CNN to find alternative artefacts
+            if ~looped_already % only if this segment is not processed already
             fprintf(2,"=====    Classify segments using CNN    ======\n")
 
             windowSize = fs*3; % samples per segment 
@@ -287,6 +288,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             all_noise_probs = all_noise_probs + sum(noise_probs,1)';
             CNN_timepoints_probs = [CNN_timepoints_probs; sum(noise_probs,2)];
             CNN_timepoints_n = [CNN_timepoints_n; sum(CNN_artifacts,2)];
+            end
             %% Fast ripple detection
            
             fprintf(2,'======                           Fast ripple detection                          ======\n');
@@ -390,7 +392,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
         for i = 1:size(seizure_samples,1)
             s = seizure_samples(i,1);
             e = seizure_samples(i,2);
-            seizure_mask(s:e) = true;
+            seizure_mask(max(s,1):min(e,size(seizure_mask,1))) = true;
         end
         sample_wise_artifacts(end+1:size(seizure_mask,1), :) = 0;
         clean_mask = ~sample_wise_artifacts & ~seizure_mask;
@@ -468,6 +470,53 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             GS_occupancy_rate(j,1) = (sum(GS_all(GS_all(:,1) == j, 4))/fs)/duration_original;
             GS_occupancy_rate(j,2) = (sum(GS_both_removed_all(GS_both_removed_all(:,1) == j, 4))/fs)/duration_both_removed;
             GS_occupancy_rate(j,3) = (sum(GS_CNN_removed_all(GS_CNN_removed_all(:,1) == j, 4))/fs)/duration_CNN_removed(j);
+
+            % if duration is 0 
+            if duration_original == 0
+                FR_appear_rate(j,1) = 0;
+                FR_occupancy_rate(j,1) = 0;
+                R_appear_rate(j,1) = 0;
+                R_occupancy_rate(j,1) = 0;
+                IED_appear_rate(j,1) = 0;
+                IED_occupancy_rate(j,1) = 0;
+                SFR_appear_rate(j,1) = 0;
+                SFR_occupancy_rate(j,1) = 0;
+                SRipples_appear_rate(j,1) = 0;
+                SRipples_occupancy_rate(j,1) = 0;
+                GS_appear_rate(j,1) = 0;
+                GS_occupancy_rate(j,1) = 0;
+            end
+
+            if duration_both_removed == 0
+                FR_appear_rate(j,2) = 0;
+                FR_occupancy_rate(j,2) = 0;
+                R_appear_rate(j,2) = 0;
+                R_occupancy_rate(j,2) = 0;
+                IED_appear_rate(j,2) = 0;
+                IED_occupancy_rate(j,2) = 0;
+                SFR_appear_rate(j,2) = 0;
+                SFR_occupancy_rate(j,2) = 0;
+                SRipples_appear_rate(j,2) = 0;
+                SRipples_occupancy_rate(j,2) = 0;
+                GS_appear_rate(j,2) = 0;
+                GS_occupancy_rate(j,2) = 0;
+            end
+
+            if duration_CNN_removed == 0
+                FR_appear_rate(j,3) = 0;
+                FR_occupancy_rate(j,3) = 0;
+                R_appear_rate(j,3) = 0;
+                R_occupancy_rate(j,3) = 0;
+                IED_appear_rate(j,3) = 0;
+                IED_occupancy_rate(j,3) = 0;
+                SFR_appear_rate(j,3) = 0;
+                SFR_occupancy_rate(j,3) = 0;
+                SRipples_appear_rate(j,3) = 0;
+                SRipples_occupancy_rate(j,3) = 0;
+                GS_appear_rate(j,3) = 0;
+                GS_occupancy_rate(j,3) = 0;
+            end
+
 
         end
         % Make sure that nan entries (duration = 0) are zero
@@ -548,7 +597,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
         %% Export summary results to an Excel file
         fprintf(2,'\n======                Export rates for file "%s"                ======\n', file_name);
-        excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xlsx");
+        excelfile = fullfile(data_dir, "detection_rates_pat" + subj_num + ".xls");
         % if idx == 1 && exist(excelfile,'file') > 0, delete(excelfile); end % check if an older excel file exists and delete it
         sheet_name = string(erase(file_name, ".edf"));
         % Write the file/signal information
@@ -693,7 +742,7 @@ writecell(sub_hdr,excelfile,'Sheet',sheet_name,'Range','A10');
 writematrix(double(bad_channel_idx), excelfile,'Sheet',sheet_name,'Range','C11')
 writematrix(sum(all_CNN_durations,1)', excelfile,'Sheet',sheet_name,'Range','D11')
 
-total_noise = sum(all_noise_probs,1) ./ all_durations(1);
+total_noise = all_noise_probs ./ all_durations(1);
 writematrix(total_noise, excelfile,'Sheet',sheet_name,'Range','E11')
 
 % Write the combined FR/IED/SFR rates and percentages of occupancy
@@ -701,6 +750,6 @@ writematrix(common_values,excelfile,'Sheet',sheet_name,'Range','F11');
 fprintf('Sheet "%s" in File "%s" is saved successfully ...\n\n', sheet_name, "detection_rates_pat" + subj_num + ".xls");
 
 excelfile = fullfile(data_dir, "noise_times_CNN_pat" + subj_num + ".xls");
-writematrix(CNN_timepoints,excelfile,'Range','A1');
+writematrix([CNN_timepoints_n,CNN_timepoints_probs],excelfile,'Range','A1');
 
 out = "The program has finished";
