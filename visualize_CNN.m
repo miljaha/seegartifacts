@@ -1,6 +1,4 @@
-
-
-subj_num = 19; % subject number
+subj_num = 23; % subject number
 data_dir = "/projects3/EPIHFO/EPIHFO/CNN results/Pat" + string(subj_num);
 fs = 2048;
 windowSize = 3*fs;
@@ -24,7 +22,7 @@ artefact_segments = artefact_samples / windowSize; % fractional segment index, x
 % build time axis for CNN_probabilities columns (in seconds, for readable labeling)
 nTimepoints = size(CNN_probabilities,2);
 time_axis_sec = (0:nTimepoints-1) * 3; % each column = 3s segment
-%%
+%
 % plot heatmap
 figure('Position',[100 100 1000 600]);
 t = tiledlayout(8,10,'TileSpacing','compact','Padding','compact');
