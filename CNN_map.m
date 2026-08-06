@@ -1,5 +1,5 @@
 % full night cnn artifacts for one subject
-subj_nums = [22]; %22 done % subject number
+subj_nums = [76]; %22 done % subject number
 load('convnet.mat') 
 % done
 % 12,19,20,21,22,23,24,25,26,27,28,2
@@ -205,16 +205,7 @@ for subj_num = subj_nums
             for i = 1:numSegments 
                 startIdx = (i-1)*step + 1; 
                 endIdx = startIdx + windowSize - 1;
-                % segment_raw = signal(startIdx:endIdx);
-                %segment_resampled = resample(segment_raw,new_fs,fs);
-                %{
-                segment = zeros(5, 15000); % Lowpass (≤900 Hz) 
-                segment(1,:) = zscore(filtfilt(b,a,segment_resampled)); %Bandpass envelopes 
-                segment(2,:) = zscore(BpPowerEnvelope(segment_resampled, 20, 100, new_fs)); 
-                segment(3,:) = zscore(BpPowerEnvelope(segment_resampled, 80, 250, new_fs)); 
-                segment(4,:) = zscore(BpPowerEnvelope(segment_resampled, 200, 600, new_fs)); 
-                segment(5,:) = zscore(BpPowerEnvelope(segment_resampled, 500, 900, new_fs)); 
-                %}
+
                 segment(1,:) = zscore(broad(startIdx:endIdx)); %Bandpass envelopes 
                 segment(2,:) = zscore(beta(startIdx:endIdx)); 
                 segment(3,:) = zscore(gamma(startIdx:endIdx)); 
@@ -228,34 +219,7 @@ for subj_num = subj_nums
             end 
         end
 
-
         CNN_probabilities= [CNN_probabilities, noise_probs];
-        %{
-        windowSize = 15000; % samples per segment 
-        overlap = 10000; % 
-        step = windowSize - overlap; 
-        numSegments = floor((size(data_original,1) - windowSize) / step)+1;
-        [b,a] = butter(3, 900/(0.5*fs), 'low');
-        noise_probs = zeros(size(data_original,2),numSegments);
-        for ch = 1:size(data_original, 2) % loop through channels (158) 
-            signal = data_original(:, ch); 
-            for i = 1:numSegments 
-                startIdx = (i-1)*step + 1; 
-                endIdx = startIdx + windowSize - 1;
-                segment_raw = signal(startIdx:endIdx); 
-                segment = zeros(5, windowSize); % Lowpass (≤900 Hz) 
-                segment(1,:) = zscore(filtfilt(b,a,segment_raw)); %Bandpass envelopes 
-                segment(2,:) = zscore(BpPowerEnvelope(segment_raw, 20, 100, fs)); 
-                segment(3,:) = zscore(BpPowerEnvelope(segment_raw, 80, 250, fs)); 
-                segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
-                segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
-                
-                [label,probs] = classify(convnet, segment); 
-                noise_probs(ch,i) = probs(1);
-            end 
-        end
-        CNN_probabilities_15000 = [CNN_probabilities_15000, noise_probs];
-        %}
 
         clear data;
     end
@@ -265,7 +229,7 @@ for subj_num = subj_nums
     e = sum(sample_window(2,:));
     sleep_samples = [s,e];
     
-    % save
+    % get the bad channels
     filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates_pat"+string(subj_num)+".xls";
     badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
     badchannels = badchannels(~isnan(badchannels));
