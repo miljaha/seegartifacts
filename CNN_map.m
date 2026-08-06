@@ -193,10 +193,10 @@ for subj_num = subj_nums
         overlap = 0; % 
         step = windowSize - overlap; 
         numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
-        [b,a] = butter(3, 900/(0.5*new_fs), 'low');
+        [b,a] = butter(3, 900/(0.5*fs), 'low');
         noise_probs = zeros(size(data_original,2),numSegments,3);
       
-        for ch = 15:40%1:size(data_original, 2) % loop through channels (158) 
+        for ch = 1:size(data_original, 2) % loop through channels (158) 
             broad = resample(filtfilt(b,a,data_original(:,ch)),new_fs,fs);
             beta = resample(BpPowerEnvelope(data_original(:,ch), 20, 100, fs),new_fs,fs);
             gamma = resample(BpPowerEnvelope(data_original(:,ch), 80, 250, fs),new_fs,fs);
