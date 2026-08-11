@@ -8,7 +8,7 @@ load('convnet.mat')
 % try
 data_files = {""}; % if empty it evokes automatic data file selection
 
-data_dir = "/projects3/EPIHFO/SEEGOMICS/Pat76_anontest";
+data_dir = "/projects3/EPIHFO/SEEGOMICS/Pat76";
 %
 fprintf(2,'\n======                    Checking data and file directories                    ======\n');
 if exist(data_dir,"file") > 0  % check if the data directory exists
@@ -170,7 +170,6 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     efilename = efile.name;
     excelfile = readtable(efilename);
 
-    stop = edf_filename(1000); 
     %Data preprocessing
     fprintf(2,'\n======                            Data preprocessing                            ======\n');
    
@@ -188,6 +187,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     artifact_samples_all = [artifact_samples_all; artefact_samples];
 
     fprintf("Length of data: %.2f min\n", (size(data_original,1))/fs/60);
+    fprintf("Number of channels: %d\n", size(data_original,2));
     %% Use CNN to find alternative artefacts
     fprintf(2,"=====    Classify segments using CNN    ======\n")
 
@@ -199,25 +199,17 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     [b,a] = butter(3, 900/(0.5*new_fs), 'low');
     noise_probs = zeros(size(data_original,2),numSegments,3);
   
-    for ch = 15:40%1:size(data_original, 2) % loop through channels (158) 
-        broad = resample(filtfilt(b,a,data_original(:,ch)),new_fs,fs);
-        beta = resample(BpPowerEnvelope(data_original(:,ch), 20, 100, fs),new_fs,fs);
-        gamma = resample(BpPowerEnvelope(data_original(:,ch), 80, 250, fs),new_fs,fs);
-        high = resample(BpPowerEnvelope(data_original(:,ch), 200, 600, fs),new_fs,fs);
-        ultrahigh = resample(BpPowerEnvelope(data_original(:,ch), 500, 900, fs),new_fs,fs);
+    for ch = 1:size(data_original, 2) % loop through channels (158) 
+        broad = filtfilt(b,a,resample(data_original(:,ch),new_fs,fs));
+        beta = BpPowerEnvelope(resample(data_original(:,ch),new_fs,fs), 20, 100, new_fs);
+        gamma = BpPowerEnvelope(resample(data_original(:,ch),new_fs,fs), 80, 250, new_fs);
+        high = BpPowerEnvelope(resample(data_original(:,ch),new_fs,fs), 200, 600, new_fs);
+        ultrahigh = BpPowerEnvelope(resample(data_original(:,ch),new_fs,fs), 500, 900, new_fs);
         for i = 1:numSegments 
             startIdx = (i-1)*step + 1; 
             endIdx = startIdx + windowSize - 1;
-            % segment_raw = signal(startIdx:endIdx);
-            %segment_resampled = resample(segment_raw,new_fs,fs);
-            %{
             segment = zeros(5, 15000); % Lowpass (≤900 Hz) 
-            segment(1,:) = zscore(filtfilt(b,a,segment_resampled)); %Bandpass envelopes 
-            segment(2,:) = zscore(BpPowerEnvelope(segment_resampled, 20, 100, new_fs)); 
-            segment(3,:) = zscore(BpPowerEnvelope(segment_resampled, 80, 250, new_fs)); 
-            segment(4,:) = zscore(BpPowerEnvelope(segment_resampled, 200, 600, new_fs)); 
-            segment(5,:) = zscore(BpPowerEnvelope(segment_resampled, 500, 900, new_fs)); 
-            %}
+      
             segment(1,:) = zscore(broad(startIdx:endIdx)); %Bandpass envelopes 
             segment(2,:) = zscore(beta(startIdx:endIdx)); 
             segment(3,:) = zscore(gamma(startIdx:endIdx)); 
@@ -233,40 +225,16 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
 
     CNN_probabilities= [CNN_probabilities, noise_probs];
-    %{
-    windowSize = 15000; % samples per segment 
-    overlap = 10000; % 
-    step = windowSize - overlap; 
-    numSegments = floor((size(data_original,1) - windowSize) / step)+1;
-    [b,a] = butter(3, 900/(0.5*fs), 'low');
-    noise_probs = zeros(size(data_original,2),numSegments);
-    for ch = 1:size(data_original, 2) % loop through channels (158) 
-        signal = data_original(:, ch); 
-        for i = 1:numSegments 
-            startIdx = (i-1)*step + 1; 
-            endIdx = startIdx + windowSize - 1;
-            segment_raw = signal(startIdx:endIdx); 
-            segment = zeros(5, windowSize); % Lowpass (≤900 Hz) 
-            segment(1,:) = zscore(filtfilt(b,a,segment_raw)); %Bandpass envelopes 
-            segment(2,:) = zscore(BpPowerEnvelope(segment_raw, 20, 100, fs)); 
-            segment(3,:) = zscore(BpPowerEnvelope(segment_raw, 80, 250, fs)); 
-            segment(4,:) = zscore(BpPowerEnvelope(segment_raw, 200, 600, fs)); 
-            segment(5,:) = zscore(BpPowerEnvelope(segment_raw, 500, 900, fs)); 
-            
-            [label,probs] = classify(convnet, segment); 
-            noise_probs(ch,i) = probs(1);
-        end 
-    end
-    CNN_probabilities_15000 = [CNN_probabilities_15000, noise_probs];
-    %}
 
+    
     clear data;
 end
-%%
+%
 % convert sample_window to sleep samples
 s = sample_window(1,1);
 e = sum(sample_window(2,:));
 sleep_samples = [s,e];
+subj_num = 76;
 
 % save
 filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates_pat"+string(subj_num)+".xls";
@@ -275,7 +243,7 @@ badchannels = badchannels(~isnan(badchannels));
 
 CNNresults = struct('CNN_map',CNN_probabilities,'artefact_samples',artifact_samples_all,'badchannels',badchannels,'sleep_samples',sleep_samples);
 
-save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num))+'_new2','CNNresults');
+save(fullfile('/projects3/EPIHFO/EPIHFO/CNN results','Pat'+string(subj_num))+'_focal','CNNresults');
 fprintf("\n --------- Subject %d saved ---------\n", subj_num)
 
 %catch ME
@@ -285,19 +253,3 @@ fprintf("\n --------- Subject %d saved ---------\n", subj_num)
 % end
 
 out = "The program has finished";
-%% 
-figure;
-subplot(2,1,1)
-t_raw = linspace(0,100,6144);
-plot(t_raw,segment_raw); hold on;
-t_res = linspace(0,100,15000);
-plot(t_res,segment_resampled);
-legend("Raw","resampled")
-
-subplot(2,1,2); hold on;
-[pxx, f] = pwelch(segment_raw,[],[],[],fs);
-plot(f, pxx);
-[pxx, f] = pwelch(segment_resampled,[],[],[],new_fs);
-plot(f, pxx);
-
-legend("Raw","resampled")
