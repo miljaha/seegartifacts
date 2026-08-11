@@ -313,7 +313,7 @@ pathology = not_artefacts & noise_probs(:,:,3) > 0.8;
 locations_pathology = [ch,t];
 
 fprintf("---- Extracting pathology segments ---- \n")
-n_TN = min(size(locations_pathology,1),4*size(locations_TP,1));
+n_TN = min(size(locations_pathology,1),2*size(locations_TP,1));
 idx = randperm(size(locations_pathology,1), n_TN);
 locations_p_selected = locations_pathology(idx,:);
 
@@ -343,12 +343,13 @@ for x = 1:size(locations_p_selected, 1)
 end
 
 fprintf("---- Pathology segments extracted! ---- \n\n")
-
-figure;
+%%
+figure; hold on;
 for i = 1:size(segment_pathology,3)
-    plot(linspace(0,5,15000), segment_pathology(1,:,i) + 200);
+    plot(linspace(0,5,15000), segment_pathology(1,:,i) + 10*(i-1));
 end
 xlabel("Time (s)")
 ylabel("Amplitude")
 title("Example pathology segments")
 
+%save("training_segments","segment_TN","segment_TP","segment_pathology")
