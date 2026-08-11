@@ -169,7 +169,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     data = uni2bi_montage(data', label); % Convert the data to the bipolar montage (MA updated)
     data_original = data.x_bip';
     
-    % Manually marked artefacts & seizures
+    %% Manually marked artefacts & seizures
     artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
 
     fprintf("Length of data: %.2f min\n", (size(data_original,1))/fs/60);
@@ -214,7 +214,7 @@ filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates
 badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
 badchannels = badchannels(~isnan(badchannels));
 
-%%
+%
 badchannel_matrix = repmat(badchannels,1,numSegments);
 artefacts_seg = artefact_samples / (3*fs);
 artefact_matrix = zeros(size(noise_probs(:,:,1)));
@@ -232,53 +232,76 @@ TN_segments = not_artefacts & (noise_probs(:,:,1) > 0.5);
 [ch,t] = find(TN_segments==1);
 locations_TN = [ch,t];
 
-
-% ---- Precompute envelopes once per unique channel ----
+%%
+save("samples", "locations_TP","locations_TN","data_original","-v7.3")
+%% ---- Precompute envelopes once per unique channel ----
 uniqueChannels = unique([locations_TP(:,1); locations_TN(:,1)]);
 envelopeCache = containers.Map('KeyType','double','ValueType','any');
 
-for c = 1:numel(uniqueChannels)
-    ch = uniqueChannels(c);
-    signal = data_original(:,ch);
-    resampled = resample(signal, new_fs, fs);   % only done once now
+fs = 2048;
+new_fs = 5000;
+windowSize = new_fs*3; % samples per segment 
+overlap = 0; % 
+step = windowSize - overlap; 
+numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
+[b,a] = butter(3, 900/(0.5*new_fs), 'low');
 
-    envelopeCache(ch) = struct( ...
-        'broad',     filtfilt(b, a, resampled), ...
-        'beta',      BpPowerEnvelope(resampled, 20, 100, new_fs), ...
-        'gamma',     BpPowerEnvelope(resampled, 80, 250, new_fs), ...
-        'high',      BpPowerEnvelope(resampled, 200, 600, new_fs), ...
-        'ultrahigh', BpPowerEnvelope(resampled, 500, 900, new_fs) ...
-    );
-end
 
 % ---- TP segments: just slice from cache ----
+fprintf("---- Extracting TP segments ---- \n")
 segment_TP = zeros(5, 15000, size(locations_TP,1));
 for x = 1:size(locations_TP, 1)
     ch = locations_TP(x,1);
-    env = envelopeCache(ch);
+    signal = data_original(:,ch);
+    resampled = resample(signal, new_fs, fs);  
+
+    broad = filtfilt(b, a, resampled);
+    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
+    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
+    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
+    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
 
     s = locations_TP(x,2) * windowSize;               % <-- fixed: was locations_TN
-    e = min(((locations_TP(x,2)+1)*windowSize)-1, size(env.gamma,1));
-
-    segment_TP(1,:,x) = zscore(env.broad(s:e))';
-    segment_TP(2,:,x) = zscore(env.beta(s:e))';
-    segment_TP(3,:,x) = zscore(env.gamma(s:e))';
-    segment_TP(4,:,x) = zscore(env.high(s:e))';
-    segment_TP(5,:,x) = zscore(env.ultrahigh(s:e))';
+    e = (locations_TP(x,2)+1)*windowSize-1;
+    if e > size(gamma,1)
+        continue
+    end
+    segment_TP(1,:,x) = zscore(broad(s:e))';
+    segment_TP(2,:,x) = zscore(beta(s:e))';
+    segment_TP(3,:,x) = zscore(gamma(s:e))';
+    segment_TP(4,:,x) = zscore(high(s:e))';
+    segment_TP(5,:,x) = zscore(ultrahigh(s:e))';
 end
+fprintf("---- TP segments extracted! ---- \n\n")
+%%
+fprintf("---- Extracting TN segments ---- \n")
+n_TN = min(size(locations_TN,1),4*size(locations_TP,1));
+idx = randperm(size(locations_TN,1), n_TN);
+locations_TN_selected = locations_TN(idx,:);
 
 % ---- TN segments: same idea ----
-segment_TN = zeros(5, 15000, size(locations_TN,1));
-for x = 1:size(locations_TN, 1)
-    ch = locations_TN(x,1);
-    env = envelopeCache(ch);
+segment_TN = zeros(5, 15000, size(locations_TN_selected,1));
+for x = 1:size(locations_TN_selected, 1)
+    ch = locations_TN_selected(x,1);
+    signal = data_original(:,ch);
+    resampled = resample(signal, new_fs, fs);  
 
-    s = locations_TN(x,2) * windowSize;
-    e = min(((locations_TN(x,2)+1)*windowSize)-1, size(env.gamma,1));
+    broad = filtfilt(b, a, resampled);
+    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
+    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
+    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
+    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
 
-    segment_TN(1,:,x) = zscore(env.broad(s:e))';
-    segment_TN(2,:,x) = zscore(env.beta(s:e))';
-    segment_TN(3,:,x) = zscore(env.gamma(s:e))';
-    segment_TN(4,:,x) = zscore(env.high(s:e))';
-    segment_TN(5,:,x) = zscore(env.ultrahigh(s:e))';
+    s = locations_TN_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
+    e = (locations_TN_selected(x,2)+1)*windowSize-1;
+    if e > size(gamma,1)
+        continue
+    end
+    segment_TN(1,:,x) = zscore(broad(s:e))';
+    segment_TN(2,:,x) = zscore(beta(s:e))';
+    segment_TN(3,:,x) = zscore(gamma(s:e))';
+    segment_TN(4,:,x) = zscore(high(s:e))';
+    segment_TN(5,:,x) = zscore(ultrahigh(s:e))';
 end
+
+fprintf("---- TN segments extracted! ---- \n\n")
