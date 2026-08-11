@@ -232,8 +232,10 @@ TN_segments = not_artefacts & (noise_probs(:,:,1) > 0.5);
 [ch,t] = find(TN_segments==1);
 locations_TN = [ch,t];
 
+
 %%
 save("samples", "locations_TP","locations_TN","data_original","-v7.3")
+
 %% ---- Precompute envelopes once per unique channel ----
 uniqueChannels = unique([locations_TP(:,1); locations_TN(:,1)]);
 envelopeCache = containers.Map('KeyType','double','ValueType','any');
@@ -305,3 +307,48 @@ for x = 1:size(locations_TN_selected, 1)
 end
 
 fprintf("---- TN segments extracted! ---- \n\n")
+%% Extract pathology segments
+pathology = not_artefacts & noise_probs(:,:,3) > 0.8;
+[ch,t] = find(pathology==1);
+locations_pathology = [ch,t];
+
+fprintf("---- Extracting pathology segments ---- \n")
+n_TN = min(size(locations_pathology,1),4*size(locations_TP,1));
+idx = randperm(size(locations_pathology,1), n_TN);
+locations_p_selected = locations_pathology(idx,:);
+
+% ---- Pathology segments: same idea ----
+segment_pathology = zeros(5, 15000, size(locations_p_selected,1));
+for x = 1:size(locations_p_selected, 1)
+    ch = locations_p_selected(x,1);
+    signal = data_original(:,ch);
+    resampled = resample(signal, new_fs, fs);  
+
+    broad = filtfilt(b, a, resampled);
+    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
+    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
+    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
+    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
+
+    s = locations_p_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
+    e = (locations_p_selected(x,2)+1)*windowSize-1;
+    if e > size(gamma,1)
+        continue
+    end
+    segment_pathology(1,:,x) = zscore(broad(s:e))';
+    segment_pathology(2,:,x) = zscore(beta(s:e))';
+    segment_pathology(3,:,x) = zscore(gamma(s:e))';
+    segment_pathology(4,:,x) = zscore(high(s:e))';
+    segment_pathology(5,:,x) = zscore(ultrahigh(s:e))';
+end
+
+fprintf("---- Pathology segments extracted! ---- \n\n")
+
+figure;
+for i = 1:size(segment_pathology,3)
+    plot(linspace(0,5,15000), segment_pathology(1,:,i) + 200);
+end
+xlabel("Time (s)")
+ylabel("Amplitude")
+title("Example pathology segments")
+
