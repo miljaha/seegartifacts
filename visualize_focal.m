@@ -78,7 +78,7 @@ end
  
 general_artefacts = table(StartTime_s_all, EndTime_s_all, Duration_s_all);
 
-CNN_map = CNNresults.CNN_map;
+CNN_map = CNNresults.CNN_map(:,:,1);
 %% ================================================================
 %  Plot CNN_map (as usual) and overlay Focal artefact patches
 %
@@ -88,7 +88,6 @@ CNN_map = CNNresults.CNN_map;
 %                (needs StartTime_s, EndTime_s, ChannelNum columns)
 % ================================================================
 
-CNN_map = rand(158,3.8*60*60/3);
 segLen = 3; % seconds per CNN_map segment - change if different
  
 figure;
@@ -120,7 +119,7 @@ for i = 1:height(focal_artefacts)
     x = [startSeg, endSeg, endSeg, startSeg];
     y = [ch-0.5,   ch-0.5, ch+0.5, ch+0.5];
  
-    h1 = patch(x, y, 'r', 'FaceAlpha', 0.4, 'EdgeColor', 'r', 'LineWidth', 1);
+    h1 = patch(x, y, 'm', 'FaceAlpha', 0.1, 'EdgeColor', 'm', 'LineWidth', 1);
 end
  
 % ---- Overlay all-channel 'Artefact' markings (full height) ----
@@ -138,7 +137,7 @@ for i = 1:height(general_artefacts)
     x = [startSeg, endSeg, endSeg, startSeg];
     y = [0.5, 0.5, nChan+0.5, nChan+0.5]; % spans every channel row
  
-    h2 = patch(x, y, 'y', 'FaceAlpha', 0.25, 'EdgeColor', 'y', 'LineWidth', 1);
+    h2 = patch(x, y, 'c', 'FaceAlpha', 0.1, 'EdgeColor', 'c', 'LineWidth', 1);
 end
 legend([h1,h2],"Focal artefact","General artefact")
 hold off;
