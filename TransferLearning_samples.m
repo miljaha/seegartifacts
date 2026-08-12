@@ -227,7 +227,7 @@ badchannel_artefacts = double(artefact_matrix & badchannel_matrix);
 TP_segments = badchannel_artefacts & (noise_probs(:,:,1) > 0.8);
 [ch,t] = find(TP_segments==1);
 locations_TP = [ch,t];
-not_artefacts = badchannel_artefacts == 0;
+not_artefacts = double(badchannel_matrix == 0 & artefact_matrix == 0); 
 TN_segments = not_artefacts & (noise_probs(:,:,1) > 0.5);
 [ch,t] = find(TN_segments==1);
 locations_TN = [ch,t];
@@ -277,7 +277,7 @@ end
 fprintf("---- TP segments extracted! ---- \n\n")
 %%
 fprintf("---- Extracting TN segments ---- \n")
-n_TN = min(size(locations_TN,1),4*size(locations_TP,1));
+n_TN = min(size(locations_TN,1),5*size(locations_TP,1));
 idx = randperm(size(locations_TN,1), n_TN);
 locations_TN_selected = locations_TN(idx,:);
 
@@ -313,7 +313,7 @@ pathology = not_artefacts & noise_probs(:,:,3) > 0.8;
 locations_pathology = [ch,t];
 
 fprintf("---- Extracting pathology segments ---- \n")
-n_TN = min(size(locations_pathology,1),2*size(locations_TP,1));
+n_TN = min(size(locations_pathology,1),5*size(locations_TP,1));
 idx = randperm(size(locations_pathology,1), n_TN);
 locations_p_selected = locations_pathology(idx,:);
 
@@ -352,4 +352,4 @@ xlabel("Time (s)")
 ylabel("Amplitude")
 title("Example pathology segments")
 
-%save("training_segments","segment_TN","segment_TP","segment_pathology")
+save("training_segments","segment_TN","segment_TP","segment_pathology")
