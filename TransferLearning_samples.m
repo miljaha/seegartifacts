@@ -232,7 +232,12 @@ TN_segments = not_artefacts & (noise_probs(:,:,1) > 0.5);
 [ch,t] = find(TN_segments==1);
 locations_TN = [ch,t];
 
-
+% extra
+extra_channels = zeros(size(noise_probs(:,:,1)));
+extra_channels(26:27,:) = 1;
+extra_not_artefacts = double(artefact_matrix == 0 & extra_channels & noise_probs(:,:,1) > +-8);
+[ch,t] = find(extra_not_artefacts==1);
+locations_extra = [ch,t];
 %%
 save("samples", "locations_TP","locations_TN","data_original","-v7.3")
 
@@ -343,6 +348,40 @@ for x = 1:size(locations_p_selected, 1)
 end
 
 fprintf("---- Pathology segments extracted! ---- \n\n")
+
+%% Extract extra segments (channels 26 and 27)
+
+fprintf("---- Extracting extra segments ---- \n")
+n_TN = min(size(locations_extra,1),5*size(locations_TP,1));
+idx = randperm(size(locations_extra,1), n_TN);
+locations_selected = locations_extra(idx,:);
+
+% ---- Pathology segments: same idea ----
+segment_extra= zeros(5, 15000, size(locations_selected,1));
+for x = 1:size(locations_selected, 1)
+    ch = locations_selected(x,1);
+    signal = data_original(:,ch);
+    resampled = resample(signal, new_fs, fs);  
+
+    broad = filtfilt(b, a, resampled);
+    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
+    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
+    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
+    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
+
+    s = locations_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
+    e = (locations_selected(x,2)+1)*windowSize-1;
+    if e > size(gamma,1)
+        continue
+    end
+    segment_extra(1,:,x) = zscore(broad(s:e))';
+    segment_extra(2,:,x) = zscore(beta(s:e))';
+    segment_extra(3,:,x) = zscore(gamma(s:e))';
+    segment_extra(4,:,x) = zscore(high(s:e))';
+    segment_extra(5,:,x) = zscore(ultrahigh(s:e))';
+end
+
+fprintf("---- Pathology segments extracted! ---- \n\n")
 %%
 figure; hold on;
 for i = 1:size(segment_pathology,3)
@@ -352,4 +391,4 @@ xlabel("Time (s)")
 ylabel("Amplitude")
 title("Example pathology segments")
 
-save("training_segments","segment_TN","segment_TP","segment_pathology")
+save("training_segments","segment_TN","segment_TP","segment_pathology","segment_extra")
