@@ -235,15 +235,11 @@ locations_TN = [ch,t];
 % extra
 extra_channels = zeros(size(noise_probs(:,:,1)));
 extra_channels(26:27,:) = 1;
-extra_not_artefacts = double(artefact_matrix == 0 & extra_channels & noise_probs(:,:,1) > +-8);
+extra_not_artefacts = double(artefact_matrix == 0 & extra_channels & noise_probs(:,:,1) > 0.8);
 [ch,t] = find(extra_not_artefacts==1);
 locations_extra = [ch,t];
-%%
-save("samples", "locations_TP","locations_TN","data_original","-v7.3")
 
-%% ---- Precompute envelopes once per unique channel ----
-uniqueChannels = unique([locations_TP(:,1); locations_TN(:,1)]);
-envelopeCache = containers.Map('KeyType','double','ValueType','any');
+% ---- Precompute envelopes once per unique channel ----
 
 fs = 2048;
 new_fs = 5000;
@@ -268,8 +264,8 @@ for x = 1:size(locations_TP, 1)
     high = BpPowerEnvelope(resampled, 200, 600, new_fs);
     ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
 
-    s = locations_TP(x,2) * windowSize;               % <-- fixed: was locations_TN
-    e = (locations_TP(x,2)+1)*windowSize-1;
+    s = (locations_TP(x,2)-1)* windowSize+1;               % <-- fixed: was locations_TN
+    e = locations_TP(x,2)*windowSize;
     if e > size(gamma,1)
         continue
     end
@@ -280,7 +276,7 @@ for x = 1:size(locations_TP, 1)
     segment_TP(5,:,x) = zscore(ultrahigh(s:e))';
 end
 fprintf("---- TP segments extracted! ---- \n\n")
-%%
+%
 fprintf("---- Extracting TN segments ---- \n")
 n_TN = min(size(locations_TN,1),5*size(locations_TP,1));
 idx = randperm(size(locations_TN,1), n_TN);
@@ -312,7 +308,7 @@ for x = 1:size(locations_TN_selected, 1)
 end
 
 fprintf("---- TN segments extracted! ---- \n\n")
-%% Extract pathology segments
+% Extract pathology segments
 pathology = not_artefacts & noise_probs(:,:,3) > 0.8;
 [ch,t] = find(pathology==1);
 locations_pathology = [ch,t];
@@ -349,7 +345,7 @@ end
 
 fprintf("---- Pathology segments extracted! ---- \n\n")
 
-%% Extract extra segments (channels 26 and 27)
+% Extract extra segments (channels 26 and 27)
 
 fprintf("---- Extracting extra segments ---- \n")
 n_TN = min(size(locations_extra,1),5*size(locations_TP,1));
@@ -381,8 +377,8 @@ for x = 1:size(locations_selected, 1)
     segment_extra(5,:,x) = zscore(ultrahigh(s:e))';
 end
 
-fprintf("---- Pathology segments extracted! ---- \n\n")
-%%
+fprintf("---- Extra segments extracted! ---- \n\n")
+%{
 figure; hold on;
 for i = 1:size(segment_pathology,3)
     plot(linspace(0,5,15000), segment_pathology(1,:,i) + 10*(i-1));
@@ -390,5 +386,6 @@ end
 xlabel("Time (s)")
 ylabel("Amplitude")
 title("Example pathology segments")
+%}
 
 save("training_segments","segment_TN","segment_TP","segment_pathology","segment_extra")
