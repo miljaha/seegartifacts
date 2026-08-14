@@ -55,7 +55,7 @@ load('convnet.mat')
 layers = convnet.Layers; % get original layers
 
 options = trainingOptions('sgdm', ...
-    'InitialLearnRate', 1e-5, ...   % gentle nudge, low LR
+    'InitialLearnRate', 1e-4, ...   % gentle nudge, low LR
     'MaxEpochs', 30, ...
     'MiniBatchSize', 32, ...
     'Momentum', 0.9, ...
@@ -72,11 +72,16 @@ net = trainNetwork(X_train, y_train, layers, options);
 YPredBefore = classify(convnet, X_test);            % original network
 YPredAfter = classify(net2, X_test);     % fine-tuned network
 
+% merge to two-class
+YPredBefore = mergecats(YPredBefore, {'ok','patology'}, 'non-artefact');
+YPredAfter  = mergecats(YPredAfter,  {'ok','patology'}, 'non-artefact');
+y_test      = mergecats(y_test,      {'ok','patology'}, 'non-artefact');
+
 confusionmat(y_test, YPredBefore)
 confusionmat(y_test, YPredAfter)
 
 %
-classNames = {'noise','ok','patology'};
+classNames = {'noise','non-artefact'};
 %
 figure % confusion matrices
 subplot(1,2,1)
