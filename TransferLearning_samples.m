@@ -165,14 +165,14 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
     %Data preprocessing
     fprintf(2,'\n======                            Data preprocessing                            ======\n');
-   
     data = uni2bi_montage(data', label); % Convert the data to the bipolar montage (MA updated)
     data_original = data.x_bip';
     
     %% Manually marked artefacts & seizures
     artefact_samples = extract_artefact_locations(events, N, fs); % Search for the artefact samples in the file (MA updated)
-
     fprintf("Length of data: %.2f min\n", (size(data_original,1))/fs/60);
+
+
     %% Use CNN to find alternative artefacts
     fprintf(2,"=====    Classify segments using CNN    ======\n")
 
@@ -183,6 +183,32 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
     [b,a] = butter(3, 900/(0.5*new_fs), 'low');
     noise_probs = zeros(size(data_original,2),numSegments,3);
+
+    % get the TN & TP & path locations
+    filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates_pat"+string(subj_num)+".xls";
+    badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
+    badchannels = badchannels(~isnan(badchannels));
+    %
+    badchannel_matrix = repmat(badchannels,1,numSegments);
+    artefact_matrix = zeros(size(noise_probs(:,:,1)));
+    for i = 1:size(artefact_samples ,1)
+        s = max(1, min(numSegments, floor((artefact_samples(i,1)-1)/(3*fs)) + 1));
+        e = max(1, min(numSegments, floor((artefact_samples(i,2)-1)/(3*fs)) + 1));
+        artefact_matrix(:,s:e) = 1;
+    end
+    badchannel_artefacts = double(artefact_matrix & badchannel_matrix);
+    not_artefacts = double(badchannel_matrix == 0 & artefact_matrix == 0); 
+
+    % extra
+    extra_channels = zeros(size(noise_probs(:,:,1)));
+    extra_channels(26:27,:) = 1;
+    extra_not_artefacts = double(artefact_matrix == 0 & extra_channels & noise_probs(:,:,1) > 0.8);
+   
+    segment_TP = zeros(0,0,0);
+    segment_TN = zeros(0,0,0);
+    segment_pathology = zeros(0,0,0);            
+    segment_extra = zeros(0,0,0);
+
   
     for ch = 1:size(data_original, 2) % loop through channels (158) 
         broad = filtfilt(b,a,resample(data_original(:,ch),new_fs,fs));
@@ -204,188 +230,30 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
             noise_probs(ch,i,1) = probs(1);
             noise_probs(ch,i,2) = probs(2);
             noise_probs(ch,i,3) = probs(3);
+
+            if badchannel_artefacts(ch,i) & probs(1) > 0.8 % TP
+                segment_TP(:,:,end+1) = segment;
+            elseif not_artefacts(ch,i) & (probs(1) > 0.5) % TN
+                segment_TN(:,:,end+1) = segment;
+            elseif not_artefacts(ch,i) & probs(3) > 0.8 % pathology
+                segment_pathology(:,:,end+1) = segment;            
+            elseif artefact_matrix(ch,i) == 0 & extra_channels(ch,i) & probs(1) > 0.8 % extra TN
+                segment_extra(:,:,end+1) = segment;
+            end
+
+
         end 
     end
-
-end
- 
-% get the bad channels
-filename = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num) + "/detection_rates_pat"+string(subj_num)+".xls";
-badchannels = table2array(readtable(filename,"Sheet", "files combined", "Range","C11:C200",'VariableNamingRule','preserve'));
-badchannels = badchannels(~isnan(badchannels));
-
-%
-badchannel_matrix = repmat(badchannels,1,numSegments);
-artefacts_seg = artefact_samples / (3*fs);
-artefact_matrix = zeros(size(noise_probs(:,:,1)));
-for i = 1:size(artefacts_seg ,1)
-    s = max(1,floor(artefacts_seg(i,1)));
-    e = max(1,floor(artefacts_seg(i,2)));
-    artefact_matrix(:,s:e) = 1;
-end
-badchannel_artefacts = double(artefact_matrix & badchannel_matrix);
-TP_segments = badchannel_artefacts & (noise_probs(:,:,1) > 0.8);
-[ch,t] = find(TP_segments==1);
-locations_TP = [ch,t];
-not_artefacts = double(badchannel_matrix == 0 & artefact_matrix == 0); 
-TN_segments = not_artefacts & (noise_probs(:,:,1) > 0.5);
-[ch,t] = find(TN_segments==1);
-locations_TN = [ch,t];
-
-% extra
-extra_channels = zeros(size(noise_probs(:,:,1)));
-extra_channels(26:27,:) = 1;
-extra_not_artefacts = double(artefact_matrix == 0 & extra_channels & noise_probs(:,:,1) > 0.8);
-[ch,t] = find(extra_not_artefacts==1);
-locations_extra = [ch,t];
-
-% ---- Precompute envelopes once per unique channel ----
-
-fs = 2048;
-new_fs = 5000;
-windowSize = new_fs*3; % samples per segment 
-overlap = 0; % 
-step = windowSize - overlap; 
-numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
-[b,a] = butter(3, 900/(0.5*new_fs), 'low');
-
-
-% ---- TP segments: just slice from cache ----
-fprintf("---- Extracting TP segments ---- \n")
-segment_TP = zeros(5, 15000, size(locations_TP,1));
-for x = 1:size(locations_TP, 1)
-    ch = locations_TP(x,1);
-    signal = data_original(:,ch);
-    resampled = resample(signal, new_fs, fs);  
-
-    broad = filtfilt(b, a, resampled);
-    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
-    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
-    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
-    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
-
-    s = (locations_TP(x,2)-1)* windowSize+1;               % <-- fixed: was locations_TN
-    e = locations_TP(x,2)*windowSize;
-    if e > size(gamma,1)
-        continue
-    end
-    segment_TP(1,:,x) = zscore(broad(s:e))';
-    segment_TP(2,:,x) = zscore(beta(s:e))';
-    segment_TP(3,:,x) = zscore(gamma(s:e))';
-    segment_TP(4,:,x) = zscore(high(s:e))';
-    segment_TP(5,:,x) = zscore(ultrahigh(s:e))';
-end
-fprintf("---- TP segments extracted! ---- \n\n")
-%
-fprintf("---- Extracting TN segments ---- \n")
-n_TN = min(size(locations_TN,1),5*size(locations_TP,1));
-idx = randperm(size(locations_TN,1), n_TN);
-locations_TN_selected = locations_TN(idx,:);
-
-% ---- TN segments: same idea ----
-segment_TN = zeros(5, 15000, size(locations_TN_selected,1));
-for x = 1:size(locations_TN_selected, 1)
-    ch = locations_TN_selected(x,1);
-    signal = data_original(:,ch);
-    resampled = resample(signal, new_fs, fs);  
-
-    broad = filtfilt(b, a, resampled);
-    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
-    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
-    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
-    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
-
-    s = locations_TN_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
-    e = (locations_TN_selected(x,2)+1)*windowSize-1;
-    if e > size(gamma,1)
-        continue
-    end
-    segment_TN(1,:,x) = zscore(broad(s:e))';
-    segment_TN(2,:,x) = zscore(beta(s:e))';
-    segment_TN(3,:,x) = zscore(gamma(s:e))';
-    segment_TN(4,:,x) = zscore(high(s:e))';
-    segment_TN(5,:,x) = zscore(ultrahigh(s:e))';
 end
 
-fprintf("---- TN segments extracted! ---- \n\n")
-% Extract pathology segments
-pathology = not_artefacts & noise_probs(:,:,3) > 0.8;
-[ch,t] = find(pathology==1);
-locations_pathology = [ch,t];
-
-fprintf("---- Extracting pathology segments ---- \n")
-n_TN = min(size(locations_pathology,1),5*size(locations_TP,1));
-idx = randperm(size(locations_pathology,1), n_TN);
-locations_p_selected = locations_pathology(idx,:);
-
-% ---- Pathology segments: same idea ----
-segment_pathology = zeros(5, 15000, size(locations_p_selected,1));
-for x = 1:size(locations_p_selected, 1)
-    ch = locations_p_selected(x,1);
-    signal = data_original(:,ch);
-    resampled = resample(signal, new_fs, fs);  
-
-    broad = filtfilt(b, a, resampled);
-    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
-    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
-    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
-    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
-
-    s = locations_p_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
-    e = (locations_p_selected(x,2)+1)*windowSize-1;
-    if e > size(gamma,1)
-        continue
-    end
-    segment_pathology(1,:,x) = zscore(broad(s:e))';
-    segment_pathology(2,:,x) = zscore(beta(s:e))';
-    segment_pathology(3,:,x) = zscore(gamma(s:e))';
-    segment_pathology(4,:,x) = zscore(high(s:e))';
-    segment_pathology(5,:,x) = zscore(ultrahigh(s:e))';
-end
-
-fprintf("---- Pathology segments extracted! ---- \n\n")
-
-% Extract extra segments (channels 26 and 27)
-
-fprintf("---- Extracting extra segments ---- \n")
-n_TN = min(size(locations_extra,1),5*size(locations_TP,1));
-idx = randperm(size(locations_extra,1), n_TN);
-locations_selected = locations_extra(idx,:);
-
-% ---- Pathology segments: same idea ----
-segment_extra= zeros(5, 15000, size(locations_selected,1));
-for x = 1:size(locations_selected, 1)
-    ch = locations_selected(x,1);
-    signal = data_original(:,ch);
-    resampled = resample(signal, new_fs, fs);  
-
-    broad = filtfilt(b, a, resampled);
-    beta = BpPowerEnvelope(resampled, 20, 100, new_fs);
-    gamma = BpPowerEnvelope(resampled, 80, 250, new_fs);
-    high = BpPowerEnvelope(resampled, 200, 600, new_fs);
-    ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
-
-    s = locations_selected(x,2) * windowSize;
-    e = (locations_selected(x,2)+1)*windowSize-1;
-    if e > size(gamma,1)
-        continue
-    end
-    segment_extra(1,:,x) = zscore(broad(s:e))';
-    segment_extra(2,:,x) = zscore(beta(s:e))';
-    segment_extra(3,:,x) = zscore(gamma(s:e))';
-    segment_extra(4,:,x) = zscore(high(s:e))';
-    segment_extra(5,:,x) = zscore(ultrahigh(s:e))';
-end
-
-fprintf("---- Extra segments extracted! ---- \n\n")
-%{
 figure; hold on;
-for i = 1:size(segment_pathology,3)
-    plot(linspace(0,5,15000), segment_pathology(1,:,i) + 10*(i-1));
+for i = 1:20
+    plot(linspace(0,5,15000), segment_TP(1,:,i) + 10*(i-1));
 end
 xlabel("Time (s)")
 ylabel("Amplitude")
-title("Example pathology segments")
-%}
+ylim([-5,195])
+title("Example normal segments")
+%%
 
 save("training_segments","segment_TN","segment_TP","segment_pathology","segment_extra")
