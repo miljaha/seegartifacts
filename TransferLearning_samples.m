@@ -365,7 +365,7 @@ for x = 1:size(locations_selected, 1)
     high = BpPowerEnvelope(resampled, 200, 600, new_fs);
     ultrahigh = BpPowerEnvelope(resampled, 500, 900, new_fs);
 
-    s = locations_selected(x,2) * windowSize;               % <-- fixed: was locations_TN
+    s = locations_selected(x,2) * windowSize;
     e = (locations_selected(x,2)+1)*windowSize-1;
     if e > size(gamma,1)
         continue
