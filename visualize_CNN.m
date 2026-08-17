@@ -1,11 +1,11 @@
-subj_num = 23; % subject number
-data_dir = "/projects3/EPIHFO/EPIHFO/CNN results/Pat" + string(subj_num);
+subj_num = 44; % subject number
+data_dir = "/projects3/EPIHFO/EPIHFO/CNN results/Pat" + string(subj_num)+"retnew";
 fs = 2048;
 windowSize = 3*fs;
 
 load(data_dir);
 
-CNN_probabilities = CNNresults.CNN_map;
+CNN_probabilities = CNNresults.CNN_map(:,:,1);
 artefact_samples = CNNresults.artefact_samples;
 badchannels = CNNresults.badchannels;
 sleep_samples = CNNresults.sleep_samples;
@@ -78,3 +78,42 @@ set(ax_right,'YTickLabel',[]); % hide y labels here, main heatmap shows channel 
 % link axes so zoom/pan stays aligned
 linkaxes([ax_top, ax_main], 'x');
 linkaxes([ax_main, ax_right], 'y');
+
+%% numerical
+
+true_artefacts = zeros(1, nTimepoints);
+
+ % which segments overlap artefacts
+for a = 1:size(artefact_segments,1)
+    start_t = artefact_segments(a,1);
+    end_t   = artefact_segments(a,2);
+    
+    seg_start = floor(start_t);              % which segment the artefact starts in
+    
+    % if end_t lands exactly on a boundary (e.g. 18.0), it does NOT spill into
+    % the next segment -> subtract a tiny epsilon before ceil, or use this trick:
+    seg_end = ceil(end_t) - 1;
+    if seg_end < seg_start
+        seg_end = seg_start;
+    end
+    idx_start = seg_start + 1;  % +1 because segment "0" = time [0,1) = array index 1
+    idx_end   = seg_end + 1;
+    
+    idx_start = max(idx_start, 1);
+    idx_end   = min(idx_end, nTimepoints);
+    
+    true_artefacts(idx_start:idx_end) = 1;
+end
+
+best_threshold = 0.13*max(total_per_t);
+above_limit = total_per_t > best_threshold;
+    
+TP = sum(above_limit == 1 & true_artefacts == 1);
+FP = sum(above_limit == 1 & true_artefacts == 0);
+FN = sum(above_limit == 0 & true_artefacts == 1);
+TN = sum(above_limit == 0 & true_artefacts == 0);
+
+precision = TP / (TP + FP + eps);
+recall    = TP / (TP + FN + eps);
+F1        = 2 * precision * recall/ (precision + recall + eps);
+
