@@ -45,74 +45,68 @@ for i = 1:length(subj_nums)
     
     %% Main Script applied to each subject's record separately
     fprintf(2,'--------------------------------------------------------------------------------------\n');
-    for file_number = 1:num_edf_files % iterate through the subject's included files/recordings
-        %% Checking data and annotations from the edf file
-        idx = file_number; % determine the index of the file to be handled
-        file_name = edf_filename(idx);  % get the edf filename
-        fprintf(2,'======        Checking data and annotations in file "%s"        ======\n', file_name);
-        [fs, N, label, events] = check_data(data_dir, file_name);
+    file_number = 1; % only take the first recording 
+    %% Checking data and annotations from the edf file
+    idx = file_number; % determine the index of the file to be handled
+    file_name = edf_filename(idx);  % get the edf filename
+    fprintf(2,'======        Checking data and annotations in file "%s"        ======\n', file_name);
+    [fs, N, label, events] = check_data(data_dir, file_name);
 
-        % get bad channels
-        [bad_channel_mask, bipolar_labels, include_channel_idx, exclude_channel_idx] = exclude_channels(subj_num, label);
-        artefact_samples = extract_artefact_locations(events, N, fs); % search for the artefact samples in the file
+    % get bad channels
+    [bad_channel_mask, bipolar_labels, include_channel_idx, exclude_channel_idx] = exclude_channels(subj_num, label);
+    artefact_samples = extract_artefact_locations(events, N, fs); % search for the artefact samples in the file
+    artefact_samples_newfs = artefact_samples .* (new_fs/fs);
+    
+    data = edfread_with_range(fullfile(data_dir, file_name), segment_sample_window{idx}(:,seg_num), segment_sample_window{idx}(2,end));
+    disp('--- Preprocessing ---');
+    data = uni2bi_montage(data', label);                  % convert the data to the bipolar montage
 
-        %% Define artefact periods to load
-        num_segments = size(artefact_samples,1);
-        for seg_num = 1:num_segments
-            if num_segments == 1
-                fprintf('--- Loading the entire requested duration ---\n');
+    data.x_bip = data.x_bip(~bad_channel_mask,:);     % exclude bad channels
+    for c = 1:size(data.x_bip,1)
+        broad = filtfilt(b,a,resample(data.x_bip(c,:),new_fs,fs));
+        beta = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 20, 100, new_fs);
+        gamma = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 80, 250, new_fs);
+        high = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 200, 600, new_fs);
+        ultrahigh = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 500, 900, new_fs);
+
+        t = 1;
+        end_of_data = false;
+        
+        while ~end_of_data
+            s = (t-1)*window_size_new + 1;
+            e = t*window_size_new;
+        
+            if e > size(broad,2)
+                end_of_data = true;
+                continue;
+            end
+        
+            overlaps = artefact_samples_newfs(:,1) <= e & artefact_samples_newfs(:,2) >= s;
+        
+            if any(overlaps)
+                last_artefact_end = max(artefact_samples_newfs(overlaps,2));
+                t = ceil(last_artefact_end / window_size_new) + 1;
             else
-                fprintf('--- Loading segment %d/%d from the edf file ---\n', seg_num, num_segments);
-            end
-            
-            n_segments_3s = ceil((artefact_samples(seg_num,2) - artefact_samples(seg_num,1)) / window_size);
-            extra_length = round((n_segments_3s*window_size - (artefact_samples(seg_num,2) - artefact_samples(seg_num,1))) / 2);
-
-            read_start = artefact_samples(seg_num,1) - extra_length;
-            read_end = artefact_samples(seg_num,2) + extra_length;
-            if read_start <= 0
-                read_start = 1;
-                read_end = artefact_samples(seg_num,2) + 2*extra_length;
-            elseif read_end > segment_sample_window{idx}(2,end)
-                read_end = segment_sample_window{idx}(2,end);
-                read_start = artefact_samples(seg_num,1) - 2*extra_length;
-            end
-
-            data = edfread_with_range(fullfile(data_dir, file_name), [read_start,read_end],read_end);
-            disp('--- Preprocessing ---');
-            data = uni2bi_montage(data', label);                  % convert the data to the bipolar montage
-
-            badchannel_data = data.x_bip(bad_channel_mask,:);     % pick only bad channels
-            for c = 1:sum(bad_channel_mask)
-                broad = filtfilt(b,a,resample(badchannel_data(c,:),new_fs,fs));
-                beta = BpPowerEnvelope(resample(badchannel_data(c,:),new_fs,fs), 20, 100, new_fs);
-                gamma = BpPowerEnvelope(resample(badchannel_data(c,:),new_fs,fs), 80, 250, new_fs);
-                high = BpPowerEnvelope(resample(badchannel_data(c,:),new_fs,fs), 200, 600, new_fs);
-                ultrahigh = BpPowerEnvelope(resample(badchannel_data(c,:),new_fs,fs), 500, 900, new_fs);
-
-                for t = 1:n_segments_3s
-                    s = (t-1)*window_size_new + 1;
-                    e = t*window_size_new;
-                    
-                    segment = zeros(5,window_size_new);
-                    segment(1,:) = zscore(broad(s:e)); %Bandpass envelopes 
-                    segment(2,:) = zscore(beta(s:e)); 
-                    segment(3,:) = zscore(gamma(s:e)); 
-                    segment(4,:) = zscore(high(s:e)); 
-                    segment(5,:) = zscore(ultrahigh(s:e));
-
-                    probs = predict(convnet, segment); 
-                    if probs(1) > 0.8
-                        extracted_samples(:,:,end+1) = segment;
-                    end
+                segment = zeros(5,window_size_new);
+                segment(1,:) = zscore(broad(s:e));
+                segment(2,:) = zscore(beta(s:e));
+                segment(3,:) = zscore(gamma(s:e));
+                segment(4,:) = zscore(high(s:e));
+                segment(5,:) = zscore(ultrahigh(s:e));
+        
+                probs = predict(convnet, segment);
+                if probs(1) > 0.5
+                    extracted_samples(:,:,end+1) = segment;
                 end
+                t = t + 1;
             end
-
-
-            % n_artefact_segments = ceil(size(data.x_bip,2) / window_size) * sum(bad_channel_mask);
-            % n_artefact_segments_sum = n_artefact_segments_sum + n_artefact_segments;
-
         end
     end
-    fprintf("Total artefacts found: %d\n", n_artefact_segments_sum)
+
+
+        % n_artefact_segments = ceil(size(data.x_bip,2) / window_size) * sum(bad_channel_mask);
+        % n_artefact_segments_sum = n_artefact_segments_sum + n_artefact_segments;
+
 end
+
+fprintf("Total artefacts found: %d\n", n_artefact_segments_sum)
