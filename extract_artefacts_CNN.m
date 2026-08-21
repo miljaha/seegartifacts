@@ -1,4 +1,14 @@
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
+%% if continueing from middle
+
+load("lastpatient.mat")
+load("extracted_artefacts.mat")
+nextpatient = i+1;
+%% if continueing from the beginning
+extracted_samples = zeros(5,15000,0);
+patient_number = [];
+nextpatient = 1;
+%%
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
 % find files automatically, extract artefacts and bad channels, load
 % artefact times only
 data_files = {""};
@@ -6,13 +16,12 @@ user_datetime_range = {"",""};
 user_segment_duration = [];
 window_size = 3*2048;
 n_artefact_segments_sum = 0;
-extracted_samples = zeros(5,15000,0);
 new_fs = 5000;
 window_size_new = 3*new_fs;
 load("convnet.mat")
 
 [b,a] = butter(3, 900/(0.5*new_fs), 'low');
-for i = 1:length(subj_nums)
+for i = nextpatient:length(subj_nums)
     subj_num = subj_nums(i);
     fprintf("Starting subject %d\n",subj_num)
 
@@ -53,7 +62,16 @@ for i = 1:length(subj_nums)
         [fs, N, label, events] = check_data(data_dir, file_name);
 
         % get bad channels
-        [bad_channel_mask, bipolar_labels, include_channel_idx, exclude_channel_idx] = exclude_channels(subj_num, label);
+        [~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
+        bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
+            repelem('-',length(bipo_inds),1) char(label{bipo_inds(:,2)})])); % Cover unipolar labels to bipolar
+        bipolar_labels = erase(bipolar_labels,' ');                 
+
+        T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs4.xlsx");
+        badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
+        badchans = extract_bad_channels(badchans_raw);
+        bad_channel_mask = ismember(lower(bipolar_labels), badchans);
+
         artefact_samples = extract_artefact_locations(events, N, fs); % search for the artefact samples in the file
 
         %% Define artefact periods to load
@@ -104,6 +122,7 @@ for i = 1:length(subj_nums)
                     probs = predict(convnet, segment); 
                     if probs(1) > 0.8
                         extracted_samples(:,:,end+1) = segment;
+                        patient_number(end+1) = subj_num;
                     end
                 end
             end
@@ -115,4 +134,7 @@ for i = 1:length(subj_nums)
         end
     end
     fprintf("Total artefacts found: %d\n", n_artefact_segments_sum)
+    save("extracted_artefacts", "extracted_samples","-v7.3")
+    save("lastpatient", "i")
+    save("patient_number_artefacts","patient_number","-v7.3")
 end

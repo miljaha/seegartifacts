@@ -1,4 +1,8 @@
-subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
+load("lastpatient.mat")
+load("extracted_good_samples.mat")
+nextpatient = i+1;
+%%
+subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
 % find files automatically, extract artefacts and bad channels, load
 % artefact times only
 data_files = {""};
@@ -10,6 +14,8 @@ extracted_samples = zeros(5,15000,0);
 new_fs = 5000;
 window_size_new = 3*new_fs;
 load("convnet.mat")
+patient_number = [];
+starts = [];
 
 [b,a] = butter(3, 900/(0.5*new_fs), 'low');
 for i = 1:length(subj_nums)
@@ -53,16 +59,28 @@ for i = 1:length(subj_nums)
     [fs, N, label, events] = check_data(data_dir, file_name);
 
     % get bad channels
-    [bad_channel_mask, bipolar_labels, include_channel_idx, exclude_channel_idx] = exclude_channels(subj_num, label);
+    [~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
+    bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
+        repelem('-',length(bipo_inds),1) char(label{bipo_inds(:,2)})])); % Cover unipolar labels to bipolar
+    bipolar_labels = erase(bipolar_labels,' ');                 
+
+    T = readtable("EPIHFO_start_end_times_badChannels_Milja_vs4.xlsx");
+    badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
+    badchans = extract_bad_channels(badchans_raw);
+    bad_channel_mask = ismember(lower(bipolar_labels), badchans);
+
     artefact_samples = extract_artefact_locations(events, N, fs); % search for the artefact samples in the file
     artefact_samples_newfs = artefact_samples .* (new_fs/fs);
     
-    data = edfread_with_range(fullfile(data_dir, file_name), segment_sample_window{idx}(:,seg_num), segment_sample_window{idx}(2,end));
+    data = edfread_with_range(fullfile(data_dir, file_name), segment_sample_window{idx}(:,1), segment_sample_window{idx}(2,end));
     disp('--- Preprocessing ---');
     data = uni2bi_montage(data', label);                  % convert the data to the bipolar montage
 
     data.x_bip = data.x_bip(~bad_channel_mask,:);     % exclude bad channels
+    
     for c = 1:size(data.x_bip,1)
+        n_per_c = 0;
+        fprintf("Starting channel %d\n",c)
         broad = filtfilt(b,a,resample(data.x_bip(c,:),new_fs,fs));
         beta = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 20, 100, new_fs);
         gamma = BpPowerEnvelope(resample(data.x_bip(c,:),new_fs,fs), 80, 250, new_fs);
@@ -72,7 +90,7 @@ for i = 1:length(subj_nums)
         t = 1;
         end_of_data = false;
         
-        while ~end_of_data
+        while ~end_of_data && n_per_c < 100
             s = (t-1)*window_size_new + 1;
             e = t*window_size_new;
         
@@ -97,16 +115,23 @@ for i = 1:length(subj_nums)
                 probs = predict(convnet, segment);
                 if probs(1) > 0.5
                     extracted_samples(:,:,end+1) = segment;
+                    patient_number(end+1) = subj_num;
+                    starts(end+1) = (t-1)*3;
+                    n_per_c = n_per_c + 1;
                 end
                 t = t + 1;
             end
         end
     end
 
-
+    
+    fprintf("Total samples found: %d\n", size(patient_number,2))
         % n_artefact_segments = ceil(size(data.x_bip,2) / window_size) * sum(bad_channel_mask);
         % n_artefact_segments_sum = n_artefact_segments_sum + n_artefact_segments;
-
+    save("extracted_good_samples", "extracted_samples","-v7.3")
+    save("lastpatient_good", "i")
+    save("patient_number_good","patient_number","-v7.3")
+    save("good_samples_starts", "starts","-v7.3")
 end
 
-fprintf("Total artefacts found: %d\n", n_artefact_segments_sum)
+
