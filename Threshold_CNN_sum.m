@@ -58,3 +58,25 @@ end
 
 [best_F1, best_idx] = max(F1);
 best_threshold = limit(best_idx);
+
+figure('Position',[100 100 800 500]);
+plot(limit, precision, 'b-'); hold on;
+plot(limit, recall, 'g-');
+plot(limit, F1, 'k-');
+
+% mark best F1 point
+plot(best_threshold, best_F1, 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
+xline(best_threshold, 'r--');
+
+% label it
+text(best_threshold, best_F1 + 0.03, ...
+    sprintf('Best F1 = %.3f\nThreshold = %.2f', best_F1, best_threshold), ...
+    'HorizontalAlignment', 'center', 'FontSize', 10, 'Color', 'r');
+title("Pat 22")
+xlabel('Threshold');
+ylabel('Score');
+
+legend('PPV','Sensitivity','F1', 'Location', 'best');
+grid on;
+xlim([limit(1) limit(end)]);
+ylim([0 1.05]);
