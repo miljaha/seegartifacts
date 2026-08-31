@@ -225,7 +225,7 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
 
 
     CNN_probabilities= [CNN_probabilities, noise_probs];
-
+ results
     
     clear data;
 end
