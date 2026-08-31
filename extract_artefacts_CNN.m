@@ -2,6 +2,7 @@
 
 load("lastpatient.mat")
 load("extracted_artefacts.mat")
+load("patient_number_artefacts.mat")
 nextpatient = i+1;
 %% if continueing from the beginning
 extracted_samples = zeros(5,15000,0);
@@ -19,6 +20,7 @@ n_artefact_segments_sum = 0;
 new_fs = 5000;
 window_size_new = 3*new_fs;
 load("convnet.mat")
+%%
 
 [b,a] = butter(3, 900/(0.5*new_fs), 'low');
 for i = nextpatient:length(subj_nums)
@@ -126,15 +128,10 @@ for i = nextpatient:length(subj_nums)
                     end
                 end
             end
-
-
-            % n_artefact_segments = ceil(size(data.x_bip,2) / window_size) * sum(bad_channel_mask);
-            % n_artefact_segments_sum = n_artefact_segments_sum + n_artefact_segments;
-
         end
     end
-    fprintf("Total artefacts found: %d\n", n_artefact_segments_sum)
     save("extracted_artefacts", "extracted_samples","-v7.3")
     save("lastpatient", "i")
     save("patient_number_artefacts","patient_number","-v7.3")
+    fprintf(2,"Total artefacts: %d\n", size(extracted_samples,3))
 end

@@ -1,22 +1,27 @@
-load("lastpatient.mat")
+load("lastpatient_good.mat")
 load("extracted_good_samples.mat")
+load("patient_number_good.mat")
+load("good_samples_starts.mat")
 nextpatient = i+1;
 %%
 subj_nums = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];         % Subject number
+subj_nums = [12,19,28,29,30,35,36,41,42,45,48,49,50,52,53,58,60];    
 % find files automatically, extract artefacts and bad channels, load
 % artefact times only
 data_files = {""};
 user_datetime_range = {"",""};
 user_segment_duration = [];
 window_size = 3*2048;
-n_artefact_segments_sum = 0;
-extracted_samples = zeros(5,15000,0);
 new_fs = 5000;
 window_size_new = 3*new_fs;
 load("convnet.mat")
+%%
+extracted_samples = zeros(5,15000,0);
 patient_number = [];
 starts = [];
+nextpatient=1;
 
+%%
 [b,a] = butter(3, 900/(0.5*new_fs), 'low');
 for i = 1:length(subj_nums)
     subj_num = subj_nums(i);
@@ -51,7 +56,7 @@ for i = 1:length(subj_nums)
     
     %% Main Script applied to each subject's record separately
     fprintf(2,'--------------------------------------------------------------------------------------\n');
-    file_number = 1; % only take the first recording 
+    file_number = 2; % only take the first recording 
     %% Checking data and annotations from the edf file
     idx = file_number; % determine the index of the file to be handled
     file_name = edf_filename(idx);  % get the edf filename
@@ -90,7 +95,7 @@ for i = 1:length(subj_nums)
         t = 1;
         end_of_data = false;
         
-        while ~end_of_data && n_per_c < 100
+        while ~end_of_data && n_per_c < 15
             s = (t-1)*window_size_new + 1;
             e = t*window_size_new;
         
@@ -129,9 +134,9 @@ for i = 1:length(subj_nums)
         % n_artefact_segments = ceil(size(data.x_bip,2) / window_size) * sum(bad_channel_mask);
         % n_artefact_segments_sum = n_artefact_segments_sum + n_artefact_segments;
     save("extracted_good_samples", "extracted_samples","-v7.3")
-    save("lastpatient_good", "i")
     save("patient_number_good","patient_number","-v7.3")
     save("good_samples_starts", "starts","-v7.3")
+    save("lastpatient_good", "i")
 end
 
 
