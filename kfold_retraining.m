@@ -6,9 +6,24 @@ art_ids = load("patient_number_artefacts.mat");
 artefacts.ids = art_ids.patient_number; 
 
 clear art_ids good_nums
-
+%
 load("convnet.mat")
+%
+patients = unique(artefacts.ids);
+n = numel(patients);
 
+patient_col = patients(:);
+artefact_counts = zeros(n,1);
+control_counts = zeros(n,1);
+
+for i = 1:n
+    artefact_counts(i) = sum(artefacts.ids == patients(i));
+    control_counts(i) = sum(controls.ids == patients(i));
+end
+
+numbers_of_samples = table(patient_col, artefact_counts, control_counts, ...
+    'VariableNames', {'Patient', 'Artefacts', 'Controls'});
+writetable(numbers_of_samples, 'sample_counts.xlsx');
 %%  Extract the final test set
 seed = 67;
 rng(seed)
