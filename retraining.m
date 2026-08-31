@@ -1,3 +1,4 @@
+%{
 artefacts = load("extracted_artefacts.mat");
 controls = load("extracted_good_samples.mat");
 good_nums = load("patient_number_good.mat");
@@ -6,7 +7,25 @@ art_ids = load("patient_number_artefacts.mat");
 artefacts.ids = art_ids.patient_number; 
 
 clear art_ids good_nums
-%
+%}
+
+tmp = load("extracted_artefacts.mat");
+artefacts.extracted_samples = single(tmp.extracted_samples);
+clear tmp
+
+tmp = load("extracted_good_samples.mat");
+controls.extracted_samples = single(tmp.extracted_samples);
+clear tmp
+
+tmp = load("patient_number_good.mat");
+controls.ids = single(tmp.patient_number);
+clear tmp
+
+tmp = load("patient_number_artefacts.mat");
+artefacts.ids = single(tmp.patient_number);
+clear tmp
+
+%%
 load("convnet.mat")
 %
 patients = unique(artefacts.ids);
@@ -75,20 +94,91 @@ options = trainingOptions('sgdm', ...
 
 % retraining
 net = trainNetwork(X_train, Y_train, layers, options);
-
-clear X_train Y_train
 %
-testset_artefacts = struct();
-testset_controls = struct();
+clear X_train Y_train selected_artefacts selected_controls
+
+% free RAM by removing the samples you already copied into X_train
+artefacts.extracted_samples(:,:,artefacts_idx) = [];
+artefacts.ids(artefacts_idx) = [];
+
+controls.extracted_samples(:,:,controls_idx) = [];
+controls.ids(controls_idx) = [];
+%% leave out the samples used for training
 
 testset_artefacts_mask = true(numel(artefacts.ids), 1);
 testset_artefacts_mask(artefacts_idx) = false;
-testset_artefacts.ids = artefacts.ids(testset_artefacts_mask);
-testset_artefacts.samples = artefacts.extracted_samples(:,:,testset_artefacts_mask);
 
 testset_controls_mask = true(numel(controls.ids), 1);
 testset_controls_mask(controls_idx) = false;
-testset_controls.ids = controls.ids(testset_controls_mask);
-testset_controls.samples = controls.extracted_samples(:,:,testset_controls_mask);
 
+
+% leave one out
+results = cell(n,1);
+
+for k = 1:n % k is the leave-out patient
+    fprintf("Starting fold %d\n",k)
+    %{
+    if k == 1; included_pats = patients(2:end);
+    elseif k == n; included_pats = patients(1:n-1);
+    else; included_pats = patients([1:k-1,k+1:end]); 
+    end
+    %}
+    included_pats = patients(k);
+
+    fold_mask_artifacts = ismember(artefacts.ids, included_pats); %& testset_artefacts_mask;
+    fold_artifacts = artefacts.extracted_samples(:,:,fold_mask_artifacts);
+    fold_mask_controls = ismember(controls.ids, included_pats); % & testset_controls_mask;
+    fold_controls = controls.extracted_samples(:,:,fold_mask_controls);
+
+    X_fold = cat(3, fold_artifacts, fold_controls);
+    X_fold = reshape(X_fold, size(X_fold,1), size(X_fold,2), 1, size(X_fold,3));
+    Y_fold = [repmat(1,1,size(fold_artifacts,3)), repmat(2,1,size(fold_controls,3))];
+    Y_fold = categorical(Y_fold, [1 2 3], {'noise','ok','patology'});
+    clear fold_artifacts fold_controls
+
+    % --- evaluate on test ---
+    Y_pred = classify(net, X_fold,MiniBatchSize=32);
+    Y_pred  = mergecats(Y_pred,  {'ok','patology'}, 'ok');
+    acc = mean(Y_pred == Y_fold');
+    fprintf('Fold %d test accuracy: %.3f\n', k, acc);
+    
+    results{k}.Y_true = Y_fold;
+    results{k}.Y_pred = Y_pred;
+    results{k}.acc = acc;
+
+    clear X_fold Y_fold
+   
+end
+%%
+acc = zeros(1,n);
+ppv = zeros(1,n);
+spec = zeros(1,n);
+for i = 1:n
+    acc(i) = results{i}.acc;
+    Y_true = results{i}.Y_true;
+    Y_pred = results{i}.Y_pred;
+
+    TP = sum(Y_true == 'noise' & Y_pred' == 'noise');
+    FP = sum(Y_true == 'ok' & Y_pred' == 'noise');
+    FN = sum(Y_true == 'noise' & Y_pred' == 'ok');
+    TN = sum(Y_true == 'ok' &  Y_pred' == 'ok');
+    ppv(i) = TP/(TP+FP); % noise actually being noise
+    spec(i) = TN/(TN+FP); % ok classified as ok
+end
+
+figure;
+plot(1:n, acc, '-o', 'MarkerFaceColor','auto'); hold on
+plot(1:n, ppv, '-o', 'MarkerFaceColor','auto');
+plot(1:n, spec, '-o', 'MarkerFaceColor','auto');
+xticks(1:n)
+xticklabels(patients)
+title("Per-subject testing of retrained CNN");
+xlabel("Subject")
+ylabel("Metrics")
+legend("Accuracy", "PPV", "Specificity", Location="southeast")
+ylim([-0.05 1.05])
+
+fprintf("Accuracy mean: %.3f, PPV mean: %.3f, Specificity mean: %.3f\n",mean(acc), mean(ppv), mean(spec))
+
+%
 
