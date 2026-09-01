@@ -13,13 +13,12 @@ clear tmp
 tmp = load("patient_number_artefacts.mat");
 artefacts.ids = single(tmp.patient_number);
 clear tmp
-
-%%
+%
 load("convnet.mat")
-%%
+%
 patients = unique(artefacts.ids);
 n = numel(patients);
-
+%
 patient_col = patients(:);
 artefact_counts = zeros(n,1);
 control_counts = zeros(n,1);
@@ -38,6 +37,7 @@ writetable(numbers_of_samples, 'sample_counts.xlsx');
 [min_c, ind_c] = min(control_counts);
 
 n_samples = min(min_a, min_c);
+%%
 
 % select n samples for retraining
 selected_artefacts = zeros(5,15000,0);
@@ -186,7 +186,7 @@ I = repmat(1:n,n,1)';
 testing_idx = I(logical(eye(n)));
 training_idx = reshape(I(~eye(n)), n-1, n)';
 
-results = struct();
+results = cell(0,0);
 
 for k = 1:n % k is the leave-out patient
     k_th = patients(k); % loso subject
@@ -201,17 +201,17 @@ for k = 1:n % k is the leave-out patient
     fold_controls_id = controls.ids(fold_mask_controls);
 
     % select n_samples from each subject ("random")
-    selected_artefacts = zeros(15000,5,0);
-    selected_controls = zeros(15000,5,0);
+    selected_artefacts = zeros(5,15000,0);
+    selected_controls = zeros(5,15000,0);
     for i = 1:numel(training_idx(k,:))
         % artefacts
-        idx = find(fold_artifacts_id == others);
+        idx = find(fold_artifacts_id == others(i));
         rng(67);
         idx_n = randperm(length(idx), n_samples); 
         selected_artefacts(:,:,end+1:end+22) = artefacts.extracted_samples(:,:,idx_n);
     
         % controls
-        idx = find(fold_controls_id == others);
+        idx = find(fold_controls_id == others(i));
         rng(68)
         idx_n =  randperm(length(idx), n_samples); 
         selected_controls(:,:,end+1:end+22) = controls.extracted_samples(:,:,idx_n);
@@ -222,7 +222,7 @@ for k = 1:n % k is the leave-out patient
     X_train = reshape(X_train, size(X_train,1), size(X_train,2), 1, size(X_train,3));
     Y_train = [repmat(1,1,size(selected_artefacts,3)), repmat(2,1,size(selected_controls,3))];
     Y_train = categorical(Y_train, [1 2 3], {'noise','ok','patology'});
-    fprintf("Size of X_train: %d \n", size(X_train,3))
+    fprintf("Size of X_train: %d \n", size(X_train,4))
 
     % --- Retrain the CNN using x_train and y_train ---
     net = trainNetwork(X_train, Y_train, layers, options);
@@ -232,10 +232,10 @@ for k = 1:n % k is the leave-out patient
     % select the kth subjects samples
     fold_mask_artifacts = ismember(artefacts.ids, k_th); %& testset_artefacts_mask;
     fold_artifacts = artefacts.extracted_samples(:,:,fold_mask_artifacts);
-    fold_artifacts_id = artefacts.ids(:,:,fold_mask_artifacts);
+    fold_artifacts_id = artefacts.ids(fold_mask_artifacts);
     fold_mask_controls = ismember(controls.ids, k_th); % & testset_controls_mask;
     fold_controls = controls.extracted_samples(:,:,fold_mask_controls);
-    fold_controls_id = controls.ids(:,:,fold_mask_controls);
+    fold_controls_id = controls.ids(fold_mask_controls);
 
     % select random 22 samples
     % artefacts
@@ -255,7 +255,7 @@ for k = 1:n % k is the leave-out patient
     X_test = reshape(X_test, size(X_test,1), size(X_test,2), 1, size(X_test,3));
     Y_test = [repmat(1,1,size(selected_artefacts,3)), repmat(2,1,size(selected_controls,3))];
     Y_test = categorical(Y_test, [1 2 3], {'noise','ok','patology'});
-    fprintf("Size of testing set: %d\n", size(X_test,3))
+    fprintf("Size of testing set: %d\n", size(X_test,4))
 
     % --- Test the network ---
     Y_pred = classify(net, X_test);
@@ -268,6 +268,8 @@ for k = 1:n % k is the leave-out patient
     results{k}.Y_pred = Y_pred;
     results{k}.acc = acc;
     results{k}.net = net;
+
+    clear X_test Y_test X_train Y_train 
 end
 
 acc = zeros(1,n);
