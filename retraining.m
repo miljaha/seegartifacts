@@ -258,7 +258,7 @@ for k = 1:n % k is the leave-out patient
     fprintf("Size of testing set: %d\n", size(X_test,4))
 
     % --- Test the network ---
-    Y_pred = classify(net, X_test);
+    [Y_pred, scores] = classify(net, X_test);
     Y_pred  = mergecats(Y_pred,  {'ok','patology'}, 'ok');
     acc = mean(Y_pred == Y_test');
     fprintf('Fold %d test accuracy: %.3f\n', k, acc); 
@@ -268,17 +268,25 @@ for k = 1:n % k is the leave-out patient
     results{k}.Y_pred = Y_pred;
     results{k}.acc = acc;
     results{k}.net = net;
+    results{k}.scores = scores;
 
     clear X_test Y_test X_train Y_train 
 end
 
+%% --- 1 Quantify the artefact classification performance using accuracy, sensitivity, specificity, F1-score, AUC-ROC, AUPRC, and the confusion matrix. ---
+
 acc = zeros(1,n);
 ppv = zeros(1,n);
 spec = zeros(1,n);
+sens = zeros(1,n);
+F1 = zeros(1,n);
+aucroc = zeros(1,n);
+auprc = zeros(1,n);
 for i = 1:n
     acc(i) = results{i}.acc;
     Y_true = results{i}.Y_true;
     Y_pred = results{i}.Y_pred;
+    scores = results{k}.scores;
 
     TP = sum(Y_true == 'noise' & Y_pred' == 'noise');
     FP = sum(Y_true == 'ok' & Y_pred' == 'noise');
@@ -286,6 +294,13 @@ for i = 1:n
     TN = sum(Y_true == 'ok' &  Y_pred' == 'ok');
     ppv(i) = TP/(TP+FP); % noise actually being noise
     spec(i) = TN/(TN+FP); % ok classified as ok
+    sens(i) = TP/(TP+FN);
+    F1(i) = 2*(ppv(i)*sens(i)) ./ (ppv(i)+sens(i));
+    
+    % AUC_ROC
+    [~,~,~,aucroc(i)] = perfcurve(Y_true, scores(:,1), 'noise');
+    [~,~,~,auprc(i)] = perfcurve(Y_true, scores(:,1), 'noise','xCrit','reca','yCrit','prec');
+
 end
 
 figure;
@@ -300,5 +315,34 @@ ylabel("Metrics")
 legend("Accuracy", "PPV", "Specificity", Location="southeast")
 ylim([-0.05 1.05])
 
-fprintf("Accuracy mean: %.3f, PPV mean: %.3f, Specificity mean: %.3f\n",mean(acc), mean(ppv), mean(spec))
+fprintf("Accuracy mean: %.3f \nPPV mean: %.3f \nSpecificity mean: %.3f \nSensitivity mean: %.3f\nF1-score mean: %.3f\n",mean(acc), mean(ppv), mean(spec),mean(sens),mean(F1))
+%% confusion matrix 
+f = figure;
+f.WindowState = 'fullscreen';
 
+tiledlayout(7,6)
+savefilename = fullfile('/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/confusionmatrix.svg');
+
+for i = 1:n
+    nexttile;
+
+    Y_true = mergecats(results{i}.Y_true,{'ok','patology'}, 'ok') ;
+    Y_pred = results{i}.Y_pred;
+
+    confusionchart(Y_true, Y_pred')
+    text = "Patient "+string(patients(i));
+    title(text);
+ 
+end
+
+ saveas(gcf, savefilename);
+
+%% Probability maps for each subject
+
+% lataa data ja network for each subject
+for i = 1:n
+    subj_num = patients(i);
+    convnet = results{i}.net;
+    out = LOSO_CNN_map(subj_num, convnet);
+    fprintf("Probability map for subject %d saved", subj_num);
+end
