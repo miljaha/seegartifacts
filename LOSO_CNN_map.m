@@ -225,7 +225,7 @@ total_per_t = sum(CNN_probabilities,1);
 total_per_c = sum(CNN_probabilities,2);
 
 % convert shifted artefact samples into segment/timepoint units (matching CNN_probabilities columns)
-artefact_segments = artefact_samples / windowSize; % fractional segment index, x-axis units
+artefact_segments = artifact_samples_all / windowSize; % fractional segment index, x-axis units
 
 % build time axis for CNN_probabilities columns (in seconds, for readable labeling)
 nTimepoints = size(CNN_probabilities,2);
@@ -277,6 +277,10 @@ for i = 1:size(artefact_segments,1)
 end
 
 % add red lines for bad channels
+[~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
+bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
+        repelem('-',length(bipo_inds),1) char(label{bipo_inds(:,2)})])); % Cover unipolar labels to bipolar
+    bipolar_labels = erase(bipolar_labels,' ');         
 badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
 badchans = extract_bad_channels(badchans_raw);
 bad_channel_idx = ismember(lower(bipolar_labels), badchans);
