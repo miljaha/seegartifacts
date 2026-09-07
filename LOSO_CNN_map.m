@@ -216,16 +216,15 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     end
 
     CNN_probabilities= [CNN_probabilities, noise_probs];
-
+ 
     clear data;
 end
-
 % plot the CNN probabilities
 total_per_t = sum(CNN_probabilities,1);
 total_per_c = sum(CNN_probabilities,2);
 
 % convert shifted artefact samples into segment/timepoint units (matching CNN_probabilities columns)
-artefact_segments = artifact_samples_all / windowSize; % fractional segment index, x-axis units
+artefact_segments = artifact_samples_all / fs; % sample to second
 
 % build time axis for CNN_probabilities columns (in seconds, for readable labeling)
 nTimepoints = size(CNN_probabilities,2);
@@ -245,8 +244,8 @@ ylabel('Sum of probabilities');
 title('Total artifact probability');
 set(ax_top,'XTickLabel',[]);
 for i = 1:size(artefact_segments,1)
-    art_start_sec = artefact_segments(i,1) * 3; % convert segment -> seconds
-    art_end_sec   = artefact_segments(i,2) * 3;
+    art_start_sec = artefact_segments(i,1); 
+    art_end_sec   = artefact_segments(i,2);
     
     a = patch([art_start_sec art_end_sec art_end_sec art_start_sec], ...
          [0.5 0.5 max(total_per_t)+0.5 max(total_per_t)+0.5], ...
@@ -268,8 +267,8 @@ hold on;
 nChannels = size(CNN_probabilities,1);
 % mark artefact times with vertical lines across all channels
 for i = 1:size(artefact_segments,1)
-    art_start_sec = artefact_segments(i,1) * 3; % convert segment -> seconds
-    art_end_sec   = artefact_segments(i,2) * 3;
+    art_start_sec = artefact_segments(i,1);
+    art_end_sec   = artefact_segments(i,2);
     
     a = patch([art_start_sec art_end_sec art_end_sec art_start_sec], ...
          [0.5 0.5 nChannels+0.5 nChannels+0.5], ...
@@ -284,7 +283,7 @@ bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
 badchans_raw = T.ChWithArtefacts(find(T.PatNRo == subj_num));   % raw cell value
 badchans = extract_bad_channels(badchans_raw);
 bad_channel_idx = ismember(lower(bipolar_labels), badchans);
-bad_chan_idx = find(badchannels == 1); % row indices of bad channels
+bad_chan_idx = find(bad_channel_idx == 1); % row indices of bad channels
 for ch = bad_chan_idx'
     b = yline(ch, 'r-', 'LineWidth', 1);
 end
