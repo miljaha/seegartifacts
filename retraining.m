@@ -13,7 +13,7 @@ clear tmp
 tmp = load("patient_number_artefacts.mat");
 artefacts.ids = single(tmp.patient_number);
 clear tmp
-%
+%%
 load("convnet.mat")
 %
 patients = unique(artefacts.ids);
@@ -272,7 +272,7 @@ for k = 1:n % k is the leave-out patient
 
     clear X_test Y_test X_train Y_train 
 end
-
+save("seegartifacts/LOSO/LOSO_results","results")
 %% --- 1 Quantify the artefact classification performance using accuracy, sensitivity, specificity, F1-score, AUC-ROC, AUPRC, and the confusion matrix. ---
 
 acc = zeros(1,n);
@@ -340,9 +340,12 @@ end
 %% Probability maps for each subject
 
 % lataa data ja network for each subject
-for i = 1:n
+for i = 1:1 % 1:n
     subj_num = patients(i);
     convnet = results{i}.net;
     out = LOSO_CNN_map(subj_num, convnet);
     fprintf("Probability map for subject %d saved", subj_num);
 end
+
+%% Predict bad channels and artifact times
+
