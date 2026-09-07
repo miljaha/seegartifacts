@@ -142,7 +142,7 @@ end
 save("seegartifacts/LOSO/LOSO_results","results")
 %% --- 1 Quantify the artefact classification performance using accuracy, sensitivity, specificity, F1-score, AUC-ROC, AUPRC, and the confusion matrix. ---
 load('/net/sigma/fishpool3/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/LOSO_results.mat')
-patients = [49,12,19,20,21,22,23,24,25,26,27,28,29,30, 31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];
+patients = [12,19,20,21,22,23,24,25,26,27,28,29,30, 31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 
 acc = zeros(1,n);
 ppv = zeros(1,n);
@@ -217,7 +217,7 @@ end
 %% Probability maps for each subject
 
 % lataa data ja network for each subject
-for i = 1:1 % 1:n
+for i = 1:n % 1:n
     subj_num = patients(i);
     convnet = results{i}.net;
     out = LOSO_CNN_map(subj_num, convnet);
@@ -225,4 +225,37 @@ for i = 1:1 % 1:n
 end
 
 %% Predict bad channels and artifact times
+for i = 1:1 % 1:n
+    subj_num = patients(i);
+    resultsname = '/projects3/EPIHFO/EPIHFO/LOSO/probabilitymap_'+'Pat'+string(subj_num)+'_results';
+    load(resultsname)
+    
+    % get the average probabilitites
+    CNN_probabilitites = results.CNN_probabilitites;
+    total_per_t = mean(CNN_probabilities,1);
+    total_per_c = mean(CNN_probabilities,2);
 
+    % get the bad channels and artefact segments
+    badchannels = results.badchannels;
+    artefact_segments = results.artefacts;
+
+    %% --- try finding significant increases ---
+    % artifacts
+    med = median(total_per_t);
+    MAD = median(abs(total_per_t - med));
+    robust_z = 0.6745 * (total_per_t - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
+    artefact_peaks = find(robust_z > 3.5);
+
+    % compare with real artifacts
+
+
+    % bad channels
+    med = median(total_per_c);
+    MAD = median(abs(total_per_c - med));
+    robust_z = 0.6745 * (total_per_c - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
+    
+    badchan_peaks = find(robust_z > 3.5);
+
+    
+
+end
