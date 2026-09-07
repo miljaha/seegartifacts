@@ -220,8 +220,8 @@ for file_number = 1:num_edf_files % iteratre through the subject's included file
     clear data;
 end
 % plot the CNN probabilities
-total_per_t = sum(CNN_probabilities,1);
-total_per_c = sum(CNN_probabilities,2);
+total_per_t = mean(CNN_probabilities,1);
+total_per_c = mean(CNN_probabilities,2);
 
 % convert shifted artefact samples into segment/timepoint units (matching CNN_probabilities columns)
 artefact_segments = artifact_samples_all / fs; % sample to second
