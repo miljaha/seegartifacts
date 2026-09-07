@@ -37,139 +37,6 @@ writetable(numbers_of_samples, 'sample_counts.xlsx');
 [min_c, ind_c] = min(control_counts);
 
 n_samples = min(min_a, min_c);
-%%
-
-% select n samples for retraining
-selected_artefacts = zeros(5,15000,0);
-artefacts_idx = [];
-selected_controls = zeros(5,15000,0);
-controls_idx = [];
-
-for i = 1:numel(patients)
-    % artefacts
-    idx = find(artefacts.ids == patients(i));
-    rng(67);
-    idx_n = randperm(length(idx), n_samples); 
-    artefacts_idx = [artefacts_idx, idx_n];
-    selected_artefacts(:,:,end+1:end+22) = artefacts.extracted_samples(:,:,idx_n);
-
-    % controls
-    idx = find(controls.ids == patients(i));
-    rng(68)
-    idx_n =  randperm(length(idx), n_samples); 
-    controls_idx = [controls_idx, idx_n];
-    selected_controls(:,:,end+1:end+22) = controls.extracted_samples(:,:,idx_n);
-end
-
-
-X_train = cat(3,selected_controls,selected_artefacts);
-X_train = reshape(X_train, size(X_train,1), size(X_train,2), 1, size(X_train,3));
-Y_train = [repmat(2,1,numel(patients)*n_samples), repmat(1,1,numel(patients)*n_samples),3];
-Y_train = categorical(Y_train, [1 2 3], {'noise','ok','patology'});
-Y_train = Y_train(1:end-1);
-
-
-layers = convnet.Layers; % get original layers
-
-options = trainingOptions('sgdm', ...
-    'InitialLearnRate', 1e-4, ...   % gentle nudge, low LR
-    'MaxEpochs', 10, ...
-    'MiniBatchSize', 64, ...
-    'Momentum', 0.9, ...
-    'L2Regularization', 0.01, ...
-    'Plots','training-progress');
-    %'ValidationData', {X_val, Y_val}, ...
-    %'ValidationFrequency', 30, ...
-    %'ValidationPatience',5,...
-    
-
-% retraining
-net = trainNetwork(X_train, Y_train, layers, options);
-%
-clear X_train Y_train selected_artefacts selected_controls
-
-% free RAM by removing the samples you already copied into X_train
-%artefacts.extracted_samples(:,:,artefacts_idx) = [];
-%artefacts.ids(artefacts_idx) = [];
-
-%controls.extracted_samples(:,:,controls_idx) = [];
-%controls.ids(controls_idx) = [];
-%% leave out the samples used for training
-
-testset_artefacts_mask = true(numel(artefacts.ids), 1);
-testset_artefacts_mask(artefacts_idx) = false;
-
-testset_controls_mask = true(numel(controls.ids), 1);
-testset_controls_mask(controls_idx) = false;
-
-
-% leave one out
-results = cell(n,1);
-
-for k = 1:n % k is the leave-out patient
-    fprintf("Starting fold %d\n",k)
-    %{
-    if k == 1; included_pats = patients(2:end);
-    elseif k == n; included_pats = patients(1:n-1);
-    else; included_pats = patients([1:k-1,k+1:end]); 
-    end
-    %}
-    included_pats = patients(k);
-
-    fold_mask_artifacts = ismember(artefacts.ids, included_pats); %& testset_artefacts_mask;
-    fold_artifacts = artefacts.extracted_samples(:,:,fold_mask_artifacts);
-    fold_mask_controls = ismember(controls.ids, included_pats); % & testset_controls_mask;
-    fold_controls = controls.extracted_samples(:,:,fold_mask_controls);
-
-    X_fold = cat(3, fold_artifacts, fold_controls);
-    X_fold = reshape(X_fold, size(X_fold,1), size(X_fold,2), 1, size(X_fold,3));
-    Y_fold = [repmat(1,1,size(fold_artifacts,3)), repmat(2,1,size(fold_controls,3))];
-    Y_fold = categorical(Y_fold, [1 2 3], {'noise','ok','patology'});
-    clear fold_artifacts fold_controls
-
-    % --- evaluate on test ---
-    Y_pred = classify(net, X_fold,MiniBatchSize=32);
-    Y_pred  = mergecats(Y_pred,  {'ok','patology'}, 'ok');
-    acc = mean(Y_pred == Y_fold');
-    fprintf('Fold %d test accuracy: %.3f\n', k, acc);
-    
-    results{k}.Y_true = Y_fold;
-    results{k}.Y_pred = Y_pred;
-    results{k}.acc = acc;
-
-    clear X_fold Y_fold
-   
-end
-%%
-acc = zeros(1,n);
-ppv = zeros(1,n);
-spec = zeros(1,n);
-for i = 1:n
-    acc(i) = results{i}.acc;
-    Y_true = results{i}.Y_true;
-    Y_pred = results{i}.Y_pred;
-
-    TP = sum(Y_true == 'noise' & Y_pred' == 'noise');
-    FP = sum(Y_true == 'ok' & Y_pred' == 'noise');
-    FN = sum(Y_true == 'noise' & Y_pred' == 'ok');
-    TN = sum(Y_true == 'ok' &  Y_pred' == 'ok');
-    ppv(i) = TP/(TP+FP); % noise actually being noise
-    spec(i) = TN/(TN+FP); % ok classified as ok
-end
-
-figure;
-plot(1:n, acc, '-o', 'MarkerFaceColor','auto'); hold on
-plot(1:n, ppv, '-o', 'MarkerFaceColor','auto');
-plot(1:n, spec, '-o', 'MarkerFaceColor','auto');
-xticks(1:n)
-xticklabels(patients)
-title("Per-subject testing of retrained CNN");
-xlabel("Subject")
-ylabel("Metrics")
-legend("Accuracy", "PPV", "Specificity", Location="southeast")
-ylim([-0.05 1.05])
-
-fprintf("Accuracy mean: %.3f, PPV mean: %.3f, Specificity mean: %.3f\n",mean(acc), mean(ppv), mean(spec))
 
 %% LOSO
 layers = convnet.Layers; % get original layers
@@ -274,6 +141,8 @@ for k = 1:n % k is the leave-out patient
 end
 save("seegartifacts/LOSO/LOSO_results","results")
 %% --- 1 Quantify the artefact classification performance using accuracy, sensitivity, specificity, F1-score, AUC-ROC, AUPRC, and the confusion matrix. ---
+load('/net/sigma/fishpool3/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/LOSO_results.mat')
+patients = [49,12,19,20,21,22,23,24,25,26,27,28,29,30, 31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,50,51,52,53,54,55,56,57,58,59,60];
 
 acc = zeros(1,n);
 ppv = zeros(1,n);
@@ -286,7 +155,7 @@ for i = 1:n
     acc(i) = results{i}.acc;
     Y_true = results{i}.Y_true;
     Y_pred = results{i}.Y_pred;
-    scores = results{k}.scores;
+    scores = results{i}.scores;
 
     TP = sum(Y_true == 'noise' & Y_pred' == 'noise');
     FP = sum(Y_true == 'ok' & Y_pred' == 'noise');
@@ -315,7 +184,15 @@ ylabel("Metrics")
 legend("Accuracy", "PPV", "Specificity", Location="southeast")
 ylim([-0.05 1.05])
 
-fprintf("Accuracy mean: %.3f \nPPV mean: %.3f \nSpecificity mean: %.3f \nSensitivity mean: %.3f\nF1-score mean: %.3f\n",mean(acc), mean(ppv), mean(spec),mean(sens),mean(F1))
+metricNames = {'Accuracy','PPV','Specificity','Sensitivity','F1','AUC-ROC','AUPRC'};
+means = [mean(acc), mean(ppv,'omitnan'), mean(spec,'omitnan'), mean(sens,'omitnan'), ...
+         mean(F1,'omitnan'), mean(aucroc,'omitnan'), mean(auprc,'omitnan')];
+sds   = [std(acc), std(ppv,'omitnan'), std(spec,'omitnan'), std(sens,'omitnan'), ...
+         std(F1,'omitnan'), std(aucroc,'omitnan'), std(auprc,'omitnan')];
+
+resultsTable = table(metricNames', means', sds', ...
+    'VariableNames', {'Metric','Mean','SD'});
+disp(resultsTable)
 %% confusion matrix 
 f = figure;
 f.WindowState = 'fullscreen';
