@@ -1,6 +1,9 @@
+
+
 function out = LOSO_CNN_map(subj_num, convnet)
 
-savefilename = fullfile('/projects3/EPIHFO/EPIHFO/LOSO/probabilitymap_','Pat'+string(subj_num),'svg');
+
+savefilename = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'.svg';
 
 
 % try
@@ -230,15 +233,15 @@ artefact_segments = artifact_samples_all / fs; % sample to second
 nTimepoints = size(CNN_probabilities,2);
 time_axis_sec = (0:nTimepoints-1) * 3; % each column = 3s segment
 %
-% plot heatmap
-figure('Position',[100 100 1000 600]);
+%% plot heatmap
+f = figure;
+f.WindowState = 'maximized';
 t = tiledlayout(8,10,'TileSpacing','compact','Padding','compact');
 
 % top: sum per timepoint
-ax_top = nexttile(1,[2 9]);
+ax_top = nexttile(1,[1 9]);
 plot(time_axis_sec, total_per_t, 'k-', 'LineWidth', 1);
 hold(ax_top, 'on');
-yline(ax_top, 3.3, 'r--', 'LineWidth', 1); % threshold reference
 xlim([time_axis_sec(1) time_axis_sec(end)]);
 ylabel('Sum of probabilities');
 title('Total artifact probability');
@@ -248,17 +251,14 @@ for i = 1:size(artefact_segments,1)
     art_end_sec   = artefact_segments(i,2);
     
     a = patch([art_start_sec art_end_sec art_end_sec art_start_sec], ...
-         [0.5 0.5 max(total_per_t)+0.5 max(total_per_t)+0.5], ...
+         [0 0 max(total_per_t) max(total_per_t)], ...
          'cyan', 'FaceAlpha', 0.25, 'EdgeColor', 'none');
 end
 
 % main 
-ax_main = nexttile(21,[6,9]); % rows 2-4, columns 1-4
+ax_main = nexttile(11,[7,9]);
 imagesc(time_axis_sec, 1:size(CNN_probabilities,1), CNN_probabilities);
 colormap(ax_main,flipud(gray));
-cb = colorbar;
-ylabel(cb, 'Artifact probability', 'Rotation',90,'FontSize',13)
-caxis([0 1]); 
 xlabel('Time (s)',FontSize=13);
 ylabel('Channel',FontSize=13);
 title(sprintf('CNN artifact probability map - Patient %d', subj_num));
@@ -291,7 +291,7 @@ end
 legend([a,b],{'Artefact','Bad channel'}, 'Location', 'best');
 
 % right: sum per channel
-ax_right = nexttile(20,[7 1]); % rows 2-4, column 5
+ax_right = nexttile(20,[7, 1]); % rows 2-4, column 5
 plot(total_per_c, 1:nChannels, 'k-', 'LineWidth', 1);
 set(ax_right,'YDir','reverse');
 grid on;
@@ -306,11 +306,12 @@ linkaxes([ax_main, ax_right], 'y');
 saveas(gcf, savefilename);
 
 % save CNN map, bad channels and artefacts
+results = struct();
 results.map = CNN_probabilities;
-results.badchannels = bad_chan_idx;
-results.artefacts = artefact_segments * 3;
+results.badchannels = bad_channel_idx;
+results.artefacts = artefact_segments;
 
-saveadress = '/projects3/EPIHFO/EPIHFO/LOSO/probabilitymap_'+'Pat'+string(subj_num)+'_results';
+saveadress = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results';
 save(saveadress, 'results')
 out = "The program has finished";
-
+end
