@@ -1,4 +1,4 @@
- %% visualize
+%% visualize the average artefact probability across time, the threshold for artifact cassification and found artifacts
 function visualize_threshold_artefacts(artefact_vec, total_per_t, artefact_peaks, th)
 
     figure;
