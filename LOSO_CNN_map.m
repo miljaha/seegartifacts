@@ -1,4 +1,7 @@
-
+% This function uses the retrained network obtained from LOSO retraining
+% (or whatever network is given as parameter) and classifies all of the
+% data from the selected subject and saves the figure and probability map,
+% bad channels and artefact segments (in seconds)
 
 function out = LOSO_CNN_map(subj_num, convnet)
 
