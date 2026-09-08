@@ -1,3 +1,5 @@
+%% --- load the artifact and normal samples ---
+
 tmp = load("extracted_artefacts.mat");
 artefacts.extracted_samples = single(tmp.extracted_samples);
 clear tmp
@@ -13,9 +15,11 @@ clear tmp
 tmp = load("patient_number_artefacts.mat");
 artefacts.ids = single(tmp.patient_number);
 clear tmp
-%%
+
+%% load pretrained network
 load("convnet.mat")
-%
+
+%% get number of samples per each patient
 patients = unique(artefacts.ids);
 n = numel(patients);
 %
@@ -32,13 +36,15 @@ numbers_of_samples = table(patient_col, artefact_counts, control_counts, ...
     'VariableNames', {'Patient', 'Artefacts', 'Controls'});
 writetable(numbers_of_samples, 'sample_counts.xlsx');
 
-%
+% find minimum sample set size = used for retraining from each patient
 [min_a, ind_a] = min(artefact_counts);
 [min_c, ind_c] = min(control_counts);
 
 n_samples = min(min_a, min_c);
 
-%% LOSO
+%% LOSO retraining and validation
+
+% prep the network and training
 layers = convnet.Layers; % get original layers
 
 options = trainingOptions('sgdm', ...
@@ -49,12 +55,15 @@ options = trainingOptions('sgdm', ...
     'L2Regularization', 0.01, ...
     'Plots','none');
 
+% testing and training sets for each fold
 I = repmat(1:n,n,1)';
 testing_idx = I(logical(eye(n)));
 training_idx = reshape(I(~eye(n)), n-1, n)';
 
+% prep results
 results = cell(0,0);
 
+% leave-one-subject-out
 for k = 1:n % k is the leave-out patient
     k_th = patients(k); % loso subject
     others = patients(training_idx(k,:));
@@ -117,7 +126,7 @@ for k = 1:n % k is the leave-out patient
     idx_n =  randperm(length(idx), n_samples); 
     selected_controls = controls.extracted_samples(:,:,idx_n);
 
-
+    % test set generation
     X_test = cat(3, selected_artefacts, selected_controls);
     X_test = reshape(X_test, size(X_test,1), size(X_test,2), 1, size(X_test,3));
     Y_test = [repmat(1,1,size(selected_artefacts,3)), repmat(2,1,size(selected_controls,3))];
@@ -139,11 +148,14 @@ for k = 1:n % k is the leave-out patient
 
     clear X_test Y_test X_train Y_train 
 end
+% save the results
 save("seegartifacts/LOSO/LOSO_results","results")
+
 %% --- 1 Quantify the artefact classification performance using accuracy, sensitivity, specificity, F1-score, AUC-ROC, AUPRC, and the confusion matrix. ---
 load('/net/sigma/fishpool3/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/LOSO_results.mat')
 patients = [12,19,20,21,22,23,24,25,26,27,28,29,30, 31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 
+% prep the results
 acc = zeros(1,n);
 ppv = zeros(1,n);
 spec = zeros(1,n);
@@ -151,39 +163,31 @@ sens = zeros(1,n);
 F1 = zeros(1,n);
 aucroc = zeros(1,n);
 auprc = zeros(1,n);
-for i = 1:n
+
+for i = 1:n % for each patient
+    % get the classes for true and predicted
     acc(i) = results{i}.acc;
     Y_true = results{i}.Y_true;
     Y_pred = results{i}.Y_pred;
     scores = results{i}.scores;
 
+    % count categories
     TP = sum(Y_true == 'noise' & Y_pred' == 'noise');
     FP = sum(Y_true == 'ok' & Y_pred' == 'noise');
     FN = sum(Y_true == 'noise' & Y_pred' == 'ok');
     TN = sum(Y_true == 'ok' &  Y_pred' == 'ok');
+
+    % count metrics
     ppv(i) = TP/(TP+FP); % noise actually being noise
     spec(i) = TN/(TN+FP); % ok classified as ok
     sens(i) = TP/(TP+FN);
     F1(i) = 2*(ppv(i)*sens(i)) ./ (ppv(i)+sens(i));
-    
-    % AUC_ROC
     [~,~,~,aucroc(i)] = perfcurve(Y_true, scores(:,1), 'noise');
     [~,~,~,auprc(i)] = perfcurve(Y_true, scores(:,1), 'noise','xCrit','reca','yCrit','prec');
 
 end
 
-figure;
-plot(1:n, acc, '-o', 'MarkerFaceColor','auto'); hold on
-plot(1:n, ppv, '-o', 'MarkerFaceColor','auto');
-plot(1:n, spec, '-o', 'MarkerFaceColor','auto');
-xticks(1:n)
-xticklabels(patients)
-title("Per-subject testing of retrained CNN");
-xlabel("Subject")
-ylabel("Metrics")
-legend("Accuracy", "PPV", "Specificity", Location="southeast")
-ylim([-0.05 1.05])
-
+% save results to table
 metricNames = {'Accuracy','PPV','Specificity','Sensitivity','F1','AUC-ROC','AUPRC'};
 means = [mean(acc), mean(ppv,'omitnan'), mean(spec,'omitnan'), mean(sens,'omitnan'), ...
          mean(F1,'omitnan'), mean(aucroc,'omitnan'), mean(auprc,'omitnan')];
@@ -196,23 +200,24 @@ disp(resultsTable)
 %% confusion matrix 
 f = figure;
 f.WindowState = 'fullscreen';
-
-tiledlayout(7,6)
-savefilename = fullfile('/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/confusionmatrix.svg');
+tiledlayout(7,6) % 42 subjects
 
 for i = 1:n
     nexttile;
 
+    % merge pathology and ok categories
     Y_true = mergecats(results{i}.Y_true,{'ok','patology'}, 'ok') ;
     Y_pred = results{i}.Y_pred;
 
+    % plot the confusion matrix
     confusionchart(Y_true, Y_pred')
     text = "Patient "+string(patients(i));
     title(text);
- 
 end
 
- saveas(gcf, savefilename);
+% save figure
+savefilename = fullfile('/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/confusionmatrix.svg');
+saveas(gcf, savefilename);
 
 %% Probability maps for each subject
 
