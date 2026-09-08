@@ -217,7 +217,7 @@ end
 %% Probability maps for each subject
 
 % lataa data ja network for each subject
-for i = 1:n % 1:n
+for i = 3:n % 1:n
     subj_num = patients(i);
     convnet = results{i}.net;
     out = LOSO_CNN_map(subj_num, convnet);
@@ -226,13 +226,14 @@ end
 
 %% Predict bad channels and artifact times
 prediction_results = struct();
-for i = 1:1 % 1:n
+th = 3.5;
+for i = 1:2 % 1:n
     subj_num = patients(i);
-    resultsname = '/projects3/EPIHFO/EPIHFO/LOSO/probabilitymap_'+'Pat'+string(subj_num)+'_results';
+    resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
     load(resultsname)
     
     % get the average probabilitites
-    CNN_probabilitites = results.CNN_probabilitites;
+    CNN_probabilities = results.map;
     total_per_t = mean(CNN_probabilities,1);
     total_per_c = mean(CNN_probabilities,2);
 
@@ -245,7 +246,7 @@ for i = 1:1 % 1:n
     med = median(total_per_t);
     MAD = median(abs(total_per_t - med)); % median absolute deviation
     robust_z = 0.6745 * (total_per_t - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
-    artefact_peaks = robust_z > 3.5;
+    artefact_peaks = robust_z > th; %% this value (now 5) needs validation
 
     % compare with real artifacts
     % CNN probabilities is in 3s segments, artefact_segments in seconds
@@ -262,29 +263,29 @@ for i = 1:1 % 1:n
 
     % artefact peaks (predicted) vs artefact_vec (true)
     TP = sum(artefact_vec & artefact_peaks);
-    FP = sum(~artefact_vec & artefact_peaks');
+    FP = sum(~artefact_vec & artefact_peaks);
     FN = sum(artefact_vec & ~artefact_peaks);
     TN = sum(~artefact_vec &  ~artefact_peaks);
 
-    acc_t(i) = TP/(TP+FP+TN+FN);
+    acc_t(i) = (TP+TN)/(TP+FP+TN+FN);
     ppv_t(i) = TP/(TP+FP); % noise actually being noise
     spec_t(i) = TN/(TN+FP); % ok classified as ok
     sens_t(i) = TP/(TP+FN);
-    F1_t(i) = 2*(ppv(i)*sens(i)) ./ (ppv(i)+sens(i));
+    F1_t(i) = 2*(ppv_t(i)*sens_t(i)) ./ (ppv_t(i)+sens_t(i));
 
     metricNames = {'Accuracy','PPV','Specificity','Sensitivity','F1'};
     metrics = [acc_t(i), ppv_t(i), spec_t(i), sens_t(i), F1_t(i)];
-    T = table(metricNames', means');
+    T = table(metricNames', metrics');
     prediction_results.(sprintf('subj_%d', subj_num)).time = T;
 
     % bad channels
     med = median(total_per_c);
     MAD = median(abs(total_per_c - med));
     robust_z = 0.6745 * (total_per_c - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
-    badchan_peaks = robust_z > 3.5;
+    badchan_peaks = robust_z > th;
     
     TP = sum(badchannels & badchan_peaks);
-    FP = sum(~badchannels & badchan_peaks');
+    FP = sum(~badchannels & badchan_peaks);
     FN = sum(badchannels & ~badchan_peaks);
     TN = sum(~badchannels &  ~badchan_peaks);
 
@@ -292,11 +293,10 @@ for i = 1:1 % 1:n
     ppv_c(i) = TP/(TP+FP); % noise actually being noise
     spec_c(i) = TN/(TN+FP); % ok classified as ok
     sens_c(i) = TP/(TP+FN);
-    F1_c(i) = 2*(ppv(i)*sens(i)) ./ (ppv(i)+sens(i));
+    F1_c(i) = 2*(ppv_c(i)*sens_c(i)) ./ (ppv_c(i)+sens_c(i));
 
     metrics = [acc_c(i), ppv_c(i), spec_c(i), sens_c(i), F1_c(i)];
-    T = table(metricNames', means');
+    T = table(metricNames', metrics');
     prediction_results.(sprintf('subj_%d', subj_num)).chans = T;
-
 
 end
