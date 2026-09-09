@@ -232,7 +232,7 @@ end
 %% Predict bad channels and artifact times
 prediction_results = struct();
 th = 3.5;
-for i = 1:2 % 1:n
+for i = 1:13 % 1:n
     subj_num = patients(i);
     resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
     load(resultsname)
@@ -278,11 +278,6 @@ for i = 1:2 % 1:n
     sens_t(i) = TP/(TP+FN);
     F1_t(i) = 2*(ppv_t(i)*sens_t(i)) ./ (ppv_t(i)+sens_t(i));
 
-    metricNames = {'Accuracy','PPV','Specificity','Sensitivity','F1'};
-    metrics = [acc_t(i), ppv_t(i), spec_t(i), sens_t(i), F1_t(i)];
-    T = table(metricNames', metrics');
-    prediction_results.(sprintf('subj_%d', subj_num)).time = T;
-
     % bad channels
     med = median(total_per_c);
     MAD = median(abs(total_per_c - med));
@@ -300,8 +295,18 @@ for i = 1:2 % 1:n
     sens_c(i) = TP/(TP+FN);
     F1_c(i) = 2*(ppv_c(i)*sens_c(i)) ./ (ppv_c(i)+sens_c(i));
 
-    metrics = [acc_c(i), ppv_c(i), spec_c(i), sens_c(i), F1_c(i)];
-    T = table(metricNames', metrics');
-    prediction_results.(sprintf('subj_%d', subj_num)).chans = T;
-
 end
+
+prediction_results.time.acc = acc_t;
+prediction_results.time.ppv = ppv_t;
+prediction_results.time.spec = spec_t;
+prediction_results.time.sens = sens_t;
+prediction_results.time.F1 = F1_t;
+
+
+prediction_results.chans.acc = acc_c;
+prediction_results.chans.ppv = ppv_c;
+prediction_results.chans.spec = spec_c;
+prediction_results.chans.sens = sens_c;
+prediction_results.chans.F1 = F1_c;
+
