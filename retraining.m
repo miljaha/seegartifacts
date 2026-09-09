@@ -231,82 +231,89 @@ end
 
 %% Predict bad channels and artifact times
 prediction_results = struct();
-th = 3.5;
-for i = 1:13 % 1:n
-    subj_num = patients(i);
-    resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
-    load(resultsname)
-    
-    % get the average probabilitites
-    CNN_probabilities = results.map;
-    total_per_t = mean(CNN_probabilities,1);
-    total_per_c = mean(CNN_probabilities,2);
+thresholds = 3:0.5:10;
+nPat = 13; % or numel(patients)
+nTh = numel(thresholds);
 
-    % get the bad channels and artefact segments
-    badchannels = results.badchannels;
-    artefact_segments = results.artefacts;
+acc_t_th = nan(nPat, nTh);
+ppv_t_th = nan(nPat, nTh);
+spec_t_th = nan(nPat, nTh);
+sens_t_th = nan(nPat, nTh);
+F1_t_th = nan(nPat, nTh);
+acc_c_th = nan(nPat, nTh);
+ppv_c_th = nan(nPat, nTh);
+spec_c_th = nan(nPat, nTh);
+sens_c_th = nan(nPat, nTh);
+F1_c_th = nan(nPat, nTh);
 
-    %% --- try finding significant increases ---
-    % artifacts
-    med = median(total_per_t);
-    MAD = median(abs(total_per_t - med)); % median absolute deviation
-    robust_z = 0.6745 * (total_per_t - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
-    artefact_peaks = robust_z > th; %% this value (now 5) needs validation
+for thIdx = 1:nTh
+    th = thresholds(thIdx);
+    for i = 1:nPat
+        subj_num = patients(i);
+        resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
+        load(resultsname)
 
-    % compare with real artifacts
-    % CNN probabilities is in 3s segments, artefact_segments in seconds
-    % create artifact vector in 3s scale
-    nSegments = length(total_per_t);
-    artefact_vec = zeros(1, nSegments);
-    for j = 1:size(artefact_segments,1)
-        startSeg = floor(artefact_segments(j,1) / 3) + 1;
-        endSeg   = ceil(artefact_segments(j,2) / 3); % ceil so edge-touching counts
-        startSeg = max(startSeg, 1);
-        endSeg   = min(endSeg, nSegments);
-        artefact_vec(startSeg:endSeg) = 1;
+        CNN_probabilities = results.map;
+        total_per_t = mean(CNN_probabilities,1);
+        total_per_c = mean(CNN_probabilities,2);
+
+        badchannels = results.badchannels;
+        artefact_segments = results.artefacts;
+
+        % --- artifacts (time) ---
+        med = median(total_per_t);
+        MAD = median(abs(total_per_t - med));
+        robust_z = 0.6745 * (total_per_t - med) / MAD;
+        artefact_peaks = robust_z > th;
+
+        nSegments = length(total_per_t);
+        artefact_vec = zeros(1, nSegments);
+        for j = 1:size(artefact_segments,1)
+            startSeg = max(floor(artefact_segments(j,1)/3)+1, 1);
+            endSeg = min(ceil(artefact_segments(j,2)/3), nSegments);
+            artefact_vec(startSeg:endSeg) = 1;
+        end
+
+        TP = sum(artefact_vec & artefact_peaks);
+        FP = sum(~artefact_vec & artefact_peaks);
+        FN = sum(artefact_vec & ~artefact_peaks);
+        TN = sum(~artefact_vec & ~artefact_peaks);
+
+        acc_t_th(i,thIdx)  = (TP+TN)/(TP+FP+TN+FN);
+        ppv_t_th(i,thIdx)  = TP/(TP+FP);
+        spec_t_th(i,thIdx) = TN/(TN+FP);
+        sens_t_th(i,thIdx) = TP/(TP+FN);
+        F1_t_th(i,thIdx)   = 2*(ppv_t_th(i,thIdx)*sens_t_th(i,thIdx)) / (ppv_t_th(i,thIdx)+sens_t_th(i,thIdx));
+
+        % --- bad channels ---
+        med = median(total_per_c);
+        MAD = median(abs(total_per_c - med));
+        robust_z = 0.6745 * (total_per_c - med) / MAD;
+        badchan_peaks = robust_z > th;
+
+        TP = sum(badchannels & badchan_peaks);
+        FP = sum(~badchannels & badchan_peaks);
+        FN = sum(badchannels & ~badchan_peaks);
+        TN = sum(~badchannels & ~badchan_peaks);
+
+        acc_c_th(i,thIdx)  = (TP+TN)/(TP+FP+TN+FN);   % <- fixed, see below
+        ppv_c_th(i,thIdx)  = TP/(TP+FP);
+        spec_c_th(i,thIdx) = TN/(TN+FP);
+        sens_c_th(i,thIdx) = TP/(TP+FN);
+        F1_c_th(i,thIdx)   = 2*(ppv_c_th(i,thIdx)*sens_c_th(i,thIdx)) / (ppv_c_th(i,thIdx)+sens_c_th(i,thIdx));
     end
-
-    % artefact peaks (predicted) vs artefact_vec (true)
-    TP = sum(artefact_vec & artefact_peaks);
-    FP = sum(~artefact_vec & artefact_peaks);
-    FN = sum(artefact_vec & ~artefact_peaks);
-    TN = sum(~artefact_vec &  ~artefact_peaks);
-
-    acc_t(i) = (TP+TN)/(TP+FP+TN+FN);
-    ppv_t(i) = TP/(TP+FP); % noise actually being noise
-    spec_t(i) = TN/(TN+FP); % ok classified as ok
-    sens_t(i) = TP/(TP+FN);
-    F1_t(i) = 2*(ppv_t(i)*sens_t(i)) ./ (ppv_t(i)+sens_t(i));
-
-    % bad channels
-    med = median(total_per_c);
-    MAD = median(abs(total_per_c - med));
-    robust_z = 0.6745 * (total_per_c - med) / MAD;   % 0.6745 makes MAD ~comparable to SD for normal data
-    badchan_peaks = robust_z > th;
-    
-    TP = sum(badchannels & badchan_peaks);
-    FP = sum(~badchannels & badchan_peaks);
-    FN = sum(badchannels & ~badchan_peaks);
-    TN = sum(~badchannels &  ~badchan_peaks);
-
-    acc_c(i) = TP/(TP+FP+TN+FN);
-    ppv_c(i) = TP/(TP+FP); % noise actually being noise
-    spec_c(i) = TN/(TN+FP); % ok classified as ok
-    sens_c(i) = TP/(TP+FN);
-    F1_c(i) = 2*(ppv_c(i)*sens_c(i)) ./ (ppv_c(i)+sens_c(i));
-
 end
 
-prediction_results.time.acc = acc_t;
-prediction_results.time.ppv = ppv_t;
-prediction_results.time.spec = spec_t;
-prediction_results.time.sens = sens_t;
-prediction_results.time.F1 = F1_t;
+prediction_results.time.acc = acc_t_th;
+prediction_results.time.ppv = ppv_t_th;
+prediction_results.time.spec = spec_t_th;
+prediction_results.time.sens = sens_t_th;
+prediction_results.time.F1 = F1_t_th;
+prediction_results.chans.acc = acc_c_th;
+prediction_results.chans.ppv = ppv_c_th;
+prediction_results.chans.spec = spec_c_th;
+prediction_results.chans.sens = sens_c_th;
+prediction_results.chans.F1 = F1_c_th;
+prediction_results.iterated_th = thresholds;
 
-
-prediction_results.chans.acc = acc_c;
-prediction_results.chans.ppv = ppv_c;
-prediction_results.chans.spec = spec_c;
-prediction_results.chans.sens = sens_c;
-prediction_results.chans.F1 = F1_c;
 
