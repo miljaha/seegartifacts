@@ -316,4 +316,63 @@ prediction_results.chans.sens = sens_c_th;
 prediction_results.chans.F1 = F1_c_th;
 prediction_results.iterated_th = thresholds;
 
+%% Plotting the results
+metricNames = {'acc','ppv','spec','sens','F1'};
+metricLabels = {'Accuracy','PPV','Specificity','Sensitivity','F1'};
+thresholds = prediction_results.iterated_th;
 
+% small jitter offsets, one per metric, centered around 0
+nMetrics = numel(metricNames);
+jitterAmount = 0.06; % tune this - fraction of your threshold step size
+jitterOffsets = linspace(-jitterAmount*(nMetrics-1)/2, jitterAmount*(nMetrics-1)/2, nMetrics);
+
+figure;
+
+% --- Panel 1: Time-wise ---
+subplot(1,2,1); hold on
+for m = 1:nMetrics
+    data = prediction_results.time.(metricNames{m});
+    meanVals = mean(data, 1, 'omitnan');
+    sdVals = std(data, 0, 1, 'omitnan');
+    x_jittered = thresholds + jitterOffsets(m);
+    errorbar(x_jittered, meanVals, sdVals, '-o', 'LineWidth', 1.2, 'MarkerSize', 4);
+end
+xlabel('Robust z-score threshold')
+ylabel('Metric value')
+title('Time-wise (artifact) performance')
+legend(metricLabels, 'Location', 'southwest')
+ylim([-0.05 1.05])
+grid on
+hold off
+
+% --- Panel 2: Channel-wise ---
+subplot(1,2,2); hold on
+for m = 1:nMetrics
+    data = prediction_results.chans.(metricNames{m});
+    meanVals = mean(data, 1, 'omitnan');
+    sdVals = std(data, 0, 1, 'omitnan');
+    x_jittered = thresholds + jitterOffsets(m);
+    errorbar(x_jittered, meanVals, sdVals, '-o', 'LineWidth', 1.2, 'MarkerSize', 4);
+end
+xlabel('Robust z-score threshold')
+ylabel('Metric value')
+title('Channel-wise (bad channel) performance')
+legend(metricLabels, 'Location', 'southwest')
+ylim([-0.05 1.05])
+grid on
+hold off
+
+sgtitle('Threshold sweep: mean \pm SD across patients')
+
+%% for later, analyze only sleep time
+%{
+s = sample_window(1,1);
+e = sum(sample_window(2,:));
+sleep_samples = [s,e];
+%}
+% how many samples from beginning and from end
+startblock = s/fs/60/3;
+endblock = e/fs/60/3;
+% leikkaa saatu CNN map näiden mukaan
+CNN_probabilities(:,startblock:endblock);
+% save
