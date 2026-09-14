@@ -222,17 +222,72 @@ saveas(gcf, savefilename);
 %% Probability maps for each subject
 
 % lataa data ja network for each subject
-for i = 3:n % 1:n
+for i = 32:n % 1:n
     subj_num = patients(i);
     convnet = results{i}.net;
     out = LOSO_CNN_map(subj_num, convnet);
     fprintf("Probability map for subject %d saved", subj_num);
 end
 
+%% crop data to analyze only sleep time
+for i = 1:n
+    subj_num = patients(i);
+    loadname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
+    load(loadname)
+
+    sample_window = get_sample_window(subj_num);
+    s = sample_window(1,1);
+    e = sum(sample_window(2,:));
+    sleep_samples = [s,e];
+
+    shift = s / 2048; % how much was deleted from the beginning, in seconds
+                  
+    % how many samples from beginning and from end
+    startblock = ceil(s/2048/3);
+    endblock = ceil(e/2048/3);
+    % leikkaa saatu CNN map näiden mukaan
+    CNN_probabilities = results.map(:,startblock:min(endblock,size(results.map,2)));
+    results.map = CNN_probabilities;
+
+    % crop artefacts
+    startsec = startblock*3;
+    endsec = endblock*3;
+
+    artefacts = results.artefacts;
+
+    st = artefacts(:,1);
+    en = artefacts(:,2);
+    
+    % remove artefacts entirely outside the window
+    keep = ~(en < startsec | st > endsec);
+    artefacts = artefacts(keep, :);
+    
+    % re-fetch st/en after filtering (rows have changed)
+    st = artefacts(:,1);
+    en = artefacts(:,2);
+    
+    % clip the ones that partially overlap the window edges
+    st(st < startsec) = startsec;
+    en(en > endsec) = endsec;
+    artefacts = [st, en];
+    artefacts = artefacts - shift;
+
+    % save
+    resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results_sleeptimes.mat';
+    results.artefacts = artefacts;
+    save(resultsname,'results')
+end 
+%%
+for i = 1:10
+    subj_num = patients(i);
+    resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results_sleeptimes.mat';
+    load(resultsname);
+    visualize_CNN_LOSO(results,subj_num)
+end
 %% Predict bad channels and artifact times
 prediction_results = struct();
 thresholds = 3:0.5:10;
-nPat = 13; % or numel(patients)
+nPat = 42; % or numel(patients)
 nTh = numel(thresholds);
 
 acc_t_th = nan(nPat, nTh);
@@ -250,12 +305,12 @@ for thIdx = 1:nTh
     th = thresholds(thIdx);
     for i = 1:nPat
         subj_num = patients(i);
-        resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results.mat';
+        resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results_sleeptimes.mat';
         load(resultsname)
 
         CNN_probabilities = results.map;
-        total_per_t = mean(CNN_probabilities,1);
-        total_per_c = mean(CNN_probabilities,2);
+        total_per_t = log1p(mean(CNN_probabilities,1));
+        total_per_c = log1p(mean(CNN_probabilities,2));
 
         badchannels = results.badchannels;
         artefact_segments = results.artefacts;
@@ -315,7 +370,8 @@ prediction_results.chans.spec = spec_c_th;
 prediction_results.chans.sens = sens_c_th;
 prediction_results.chans.F1 = F1_c_th;
 prediction_results.iterated_th = thresholds;
-
+%%
+visualize_threshold_artefacts(50,200)
 %% Plotting the results
 metricNames = {'acc','ppv','spec','sens','F1'};
 metricLabels = {'Accuracy','PPV','Specificity','Sensitivity','F1'};
@@ -361,18 +417,7 @@ legend(metricLabels, 'Location', 'southwest')
 ylim([-0.05 1.05])
 grid on
 hold off
-
 sgtitle('Threshold sweep: mean \pm SD across patients')
 
-%% for later, analyze only sleep time
-%{
-s = sample_window(1,1);
-e = sum(sample_window(2,:));
-sleep_samples = [s,e];
-%}
-% how many samples from beginning and from end
-startblock = s/fs/60/3;
-endblock = e/fs/60/3;
-% leikkaa saatu CNN map näiden mukaan
-CNN_probabilities(:,startblock:endblock);
-% save
+
+
