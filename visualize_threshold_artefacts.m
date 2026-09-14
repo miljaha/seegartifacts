@@ -1,5 +1,28 @@
 %% visualize the average artefact probability across time, the threshold for artifact cassification and found artifacts
-function visualize_threshold_artefacts(artefact_vec, total_per_t, artefact_peaks, th)
+function visualize_threshold_artefacts(subj_num, th)
+
+    resultsname = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/probabilitymap_Pat'+string(subj_num)+'_results_sleeptimes.mat';
+    load(resultsname)
+
+    CNN_probabilities = results.map;
+    total_per_t = log1p(mean(CNN_probabilities,1));
+
+    artefact_segments = results.artefacts;
+
+    % --- artifacts (time) ---
+    med = median(total_per_t);
+    MAD = median(abs(total_per_t - med));
+    robust_z = 0.6745 * (total_per_t - med) / MAD;
+    artefact_peaks = robust_z > th;
+
+    nSegments = length(total_per_t);
+    artefact_vec = zeros(1, nSegments);
+    
+    for j = 1:size(artefact_segments,1)
+            startSeg = max(floor(artefact_segments(j,1)/3)+1, 1);
+            endSeg = min(ceil(artefact_segments(j,2)/3), nSegments);
+            artefact_vec(startSeg:endSeg) = 1;
+    end
 
     figure;
     nSegments = length(total_per_t);
