@@ -12,7 +12,7 @@ for s_n = [10,29] % get the test subject and their associated network and list o
     trainsubjects = training_idx(s_n,:);
     testsubj = patients(s_n);
   % if testsubj == 27 || testsubj == 47; continue; end % skip example subjects
-    for sn = 1:size(trainsubjects) % loop training subjects
+    for sn = 1:size(trainsubjects,2) % loop training subjects
         subj_num = patients(trainsubjects(sn));
         fprintf(2,"\n------ Starting subject %d ------\n\n",subj_num)   
         data_files = {""}; % if empty it evokes automatic data file selection
