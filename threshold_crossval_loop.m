@@ -1,20 +1,19 @@
-patients = [12,19,20,21,22,23,24,25,26,27,28,29,30, 31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
+patients = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n = length(patients);
 
 I = repmat(1:n,n,1)';
 testing_idx = I(logical(eye(n)));
 training_idx = reshape(I(~eye(n)), n-1, n)';
-%%
 load('/net/sigma/fishpool3/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/LOSO_results.mat')
 
-for s_n = 1:n % get the test subject and their associated network and list of training subject
+%%
+for s_n = [10,29] % get the test subject and their associated network and list of training subject
     convnet = results{s_n}.net;
     trainsubjects = training_idx(s_n,:);
     testsubj = patients(s_n);
-    if testsubj == 27; continue; % skip example subjects
-    elseif testsubj == 47; continue; end
+  % if testsubj == 27 || testsubj == 47; continue; end % skip example subjects
     for sn = 1:size(trainsubjects) % loop training subjects
-        subj_num = trainsubjects(sn);
+        subj_num = patients(trainsubjects(sn));
         fprintf(2,"\n------ Starting subject %d ------\n\n",subj_num)   
         data_files = {""}; % if empty it evokes automatic data file selection
         
@@ -202,7 +201,7 @@ for s_n = 1:n % get the test subject and their associated network and list of tr
             numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
             [b,a] = butter(3, 900/(0.5*new_fs), 'low');
             noise_probs = zeros(size(data_original,2),numSegments);
-        
+            pat_probs = zeros(size(data_original,2),numSegments);
             for ch = 1:size(data_original, 2)
             broad     = filtfilt(b,a,resample(data_original(:,ch),new_fs,fs));
             beta      = BpPowerEnvelope(resample(data_original(:,ch),new_fs,fs), 20, 100, new_fs);
@@ -226,7 +225,6 @@ for s_n = 1:n % get the test subject and their associated network and list of tr
             probs = predict(convnet, allSegments);   % one call for all segments in this channel
             noise_probs(ch,:) = probs(:,1)';
             pat_probs(ch,:) = probs(:,3)';
-            fprintf("Channel %d done\n", ch)
             end
         
             CNN_probabilities= [CNN_probabilities, noise_probs];
@@ -253,7 +251,7 @@ for s_n = 1:n % get the test subject and their associated network and list of tr
         % crop artefacts
         startsec = startblock*3;
         endsec = endblock*3;
-        
+        artifact_samples_all = artifact_samples_all / 2048;
         st = artifact_samples_all(:,1);
         en = artifact_samples_all(:,2);
         
@@ -283,12 +281,13 @@ for s_n = 1:n % get the test subject and their associated network and list of tr
         bad_channel_idx = ismember(lower(bipolar_labels), badchans);
         bad_chan_idx = find(bad_channel_idx == 1); % row indices of bad channels
         
-        trainingval_res.string('Pat'+string(subj_num)).badchans = bad_chan_idx;
-        trainingval_res.string('Pat'+string(subj_num)).artifacts = artifact_samples_all;
-        trainingval_res.string('Pat'+string(subj_num)).time_prob = time_prob;
-        trainingval_res.string('Pat'+string(subj_num)).channel_prob = channel_prob;
-        trainingval_res.string('Pat'+string(subj_num)).epileptic_prob = epileptic_prob;
-        trainingval_res.string('Pat'+string(subj_num)).epil_chan_prob = epil_chan_prob;
+        fieldname = "Pat" + string(subj_num);
+        trainingval_res.(fieldname).badchans = bad_chan_idx;
+        trainingval_res.(fieldname).artifacts = artifact_samples_all;
+        trainingval_res.(fieldname).time_prob = time_prob;
+        trainingval_res.(fieldname).channel_prob = channel_prob;
+        trainingval_res.(fieldname).epileptic_prob = epileptic_prob;
+        trainingval_res.(fieldname).epil_chan_prob = epil_chan_prob;
         
         saveadress = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/trainingval_subj'+string(testsubj);
         save(saveadress, 'trainingval_res')
