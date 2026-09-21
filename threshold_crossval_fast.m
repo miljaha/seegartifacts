@@ -303,7 +303,7 @@ for sn = 1:n
         trainingval_res.(fieldname).epileptic_prob = epileptic_prob;
         trainingval_res.(fieldname).epil_chan_prob = epil_chan_prob;
         
-        saveadress = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/trainingval_subj'+savefilename;
+        saveadress = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/trainingval_fast_'+savefilename;
         save(saveadress, 'trainingval_res')
     end
 end
