@@ -1,6 +1,6 @@
 patients = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n = length(patients);
-
+analyzed = [27,47];
 I = repmat(1:n,n,1)';
 testing_idx = I(logical(eye(n)));
 training_idx = reshape(I(~eye(n)), n-1, n)';
@@ -225,7 +225,7 @@ for sn = 1:n
         %% classify data with all CNNs
         parfor ind = 1:n 
             s_n = patients(ind);
-            if s_n == sn; continue; end  % except subject's own
+            if s_n == sn; continue; elseif ismember(s_n, analyzed); continue; end  % except subject's own
             convnet = results{ind}.net;
             probs = predict(convnet, allSegments); 
 
@@ -255,7 +255,7 @@ for sn = 1:n
     endblock = ceil(e/2048/3);
 
     for s_n = patients
-        if s_n == sn; continue; end
+        if s_n == sn; continue; elseif ismember(s_n, analyzed); continue; end
         savefilename = "Pat" + string(patients(s_n));
         fieldname = "Pat" + string(patients(sn));
         time_prob = mean(CNN_probabilities.(savefilename),1);
