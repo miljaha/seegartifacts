@@ -1,6 +1,12 @@
 patients = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n = length(patients);
-analyzed = [27,47];
+analyzed = [27,47,12,19];
+this_round = [20,21,22,23,24,25,26,28,29,30,31,32];
+% this_round = [33,34,35,36,37,38,40,41,42,43,44,45,46];
+% this round = [48,49,50,51,52,53,54,55,56,57,58,59,60];
+n_round = length(this_round);
+
+
 I = repmat(1:n,n,1)';
 testing_idx = I(logical(eye(n)));
 training_idx = reshape(I(~eye(n)), n-1, n)';
@@ -223,8 +229,8 @@ for sn = 1:n
         end
 
         %% classify data with all CNNs
-        parfor ind = 1:n 
-            s_n = patients(ind);
+        parfor ind = 1:n_round 
+            s_n = this_round(ind);
             if s_n == sn; continue; elseif ismember(s_n, analyzed); continue; end  % except subject's own
             convnet = results{ind}.net;
             probs = predict(convnet, allSegments); 
@@ -235,7 +241,7 @@ for sn = 1:n
         end
 
         % combine with previous files (if any)
-        for ind = 1:n
+        for ind = 1:n_round
             if isempty(CNN_cell{ind}); continue; end
             fieldname = "Pat" + string(patients(ind));
             CNN_probabilities.(fieldname) = [CNN_probabilities.(fieldname), CNN_cell{ind}];
@@ -254,15 +260,17 @@ for sn = 1:n
     startblock = ceil(s/2048/3);
     endblock = ceil(e/2048/3);
 
-    for s_n = patients
+    for s_n = 1:n_round
         if s_n == sn; continue; elseif ismember(s_n, analyzed); continue; end
-        savefilename = "Pat" + string(patients(s_n));
+        savefilename = "Pat" + string(this_round(s_n));
         fieldname = "Pat" + string(patients(sn));
+
+        sleep_end = min(endblock,size(epilept_probs.(savefilename),2));
         time_prob = mean(CNN_probabilities.(savefilename),1);
-        time_prob = time_prob(:,startblock:min(endblock,size(CNN_probabilities.(savefilename),2)));
+        time_prob = time_prob(:,startblock:sleep_end);
 
         epileptic_prob = mean(epilept_probs.(savefilename),1);
-        epileptic_prob = epileptic_prob(:,startblock:min(endblock,size(epilept_probs.(savefilename),2))); 
+        epileptic_prob = epileptic_prob(:,startblock:sleep_end); 
         % crop artefacts
         startsec = startblock*3;
         endsec = endblock*3;
@@ -286,6 +294,8 @@ for sn = 1:n
         
         channel_prob = mean(CNN_probabilities.(fieldname),2);
         epil_chan_prob = mean(epilept_probs.(fieldname),2);
+
+        probability_map = CNN_probabilities.(savefilename)(:,startblock:sleep_end);
         
         [~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
         bipolar_labels = lower(string([char(label{bipo_inds(:,1)}) ...
@@ -296,12 +306,13 @@ for sn = 1:n
         bad_channel_idx = ismember(lower(bipolar_labels), badchans);
         bad_chan_idx = find(bad_channel_idx == 1); % row indices of bad channels
 
-        trainingval_res.subj_n.badchans = bad_chan_idx;
+        trainingval_res.(fieldname).badchans = bad_chan_idx;
         trainingval_res.(fieldname).artifacts = artifact_samples_all;
         trainingval_res.(fieldname).time_prob = time_prob;
         trainingval_res.(fieldname).channel_prob = channel_prob;
         trainingval_res.(fieldname).epileptic_prob = epileptic_prob;
         trainingval_res.(fieldname).epil_chan_prob = epil_chan_prob;
+        trainingval_res.(fieldname).probability_map = probability_map;
         
         saveadress = '/projects3/EPIHFO/EPIHFO/seegartifacts/LOSO/trainingval_fast_'+savefilename;
         save(saveadress, 'trainingval_res')
