@@ -1,8 +1,7 @@
 patients = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n = length(patients);
 analyzed = [27,47,12,19];
-this_round = [20,21,22,23,24,25,26,28,29,30,31,32];
-% this_round = [33,34,35,36,37,38,40,41,42,43,44,45,46];
+this_round = [20,21,22,23,24,25,26,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46];
 % this round = [48,49,50,51,52,53,54,55,56,57,58,59,60];
 n_round = length(this_round);
 
@@ -153,7 +152,7 @@ for sn = 1:n
     
     %% allocate result structures
     CNN_probabilities = struct();
-    epilept_probs = sturct();
+    epilept_probs = struct();
     artifact_samples_all = [];
     shift = 0;
     %
@@ -229,23 +228,30 @@ for sn = 1:n
         end
 
         %% classify data with all CNNs
-        parfor ind = 1:n_round 
+        for ind = 1:n_round 
             s_n = this_round(ind);
             if s_n == sn; continue; elseif ismember(s_n, analyzed); continue; end  % except subject's own
-            convnet = results{ind}.net;
+            pat_idx = find(patients == s_n);   % correct index into results/patients
+            convnet = results{pat_idx}.net;
             probs = predict(convnet, allSegments); 
 
             CNN_cell{ind}(ch,:) = probs(:,1)';
             epilept_cell{ind}(ch,:) = probs(:,3)';
-        end
-        end
 
+        end
+        end
+       
         % combine with previous files (if any)
         for ind = 1:n_round
             if isempty(CNN_cell{ind}); continue; end
-            fieldname = "Pat" + string(patients(ind));
+            fieldname = "Pat" + string(this_round(ind));
+            if file_number > 1 
             CNN_probabilities.(fieldname) = [CNN_probabilities.(fieldname), CNN_cell{ind}];
             epilept_probs.(fieldname) = [epilept_probs.(fieldname), epilept_cell{ind}];
+            else
+            CNN_probabilities.(fieldname) = CNN_cell{ind};
+            epilept_probs.(fieldname) = epilept_cell{ind};
+            end
         end
 
     end
