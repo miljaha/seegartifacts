@@ -1,8 +1,8 @@
 patients = [12,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n = length(patients);
 analyzed = [27,47,12,19];
-this_round = [20,21,22,23,24,25,26,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46];
-% this round = [48,49,50,51,52,53,54,55,56,57,58,59,60];
+%this_round = [20,21,22,23,24,25,26,28,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46];
+this_round = [48,49,50,51,52,53,54,55,56,57,58,59,60];
 n_round = length(this_round);
 
 
@@ -298,8 +298,8 @@ for sn = 1:n
         artifact_samples_all = [st, en];
         artifact_samples_all = artifact_samples_all - shift;
         
-        channel_prob = mean(CNN_probabilities.(fieldname),2);
-        epil_chan_prob = mean(epilept_probs.(fieldname),2);
+        channel_prob = mean(CNN_probabilities.(savefilename),2);
+        epil_chan_prob = mean(epilept_probs.(savefilename),2);
 
         probability_map = CNN_probabilities.(savefilename)(:,startblock:sleep_end);
         
