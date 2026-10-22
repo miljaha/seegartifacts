@@ -59,9 +59,8 @@ fprintf(2,'======                      Checking the segmentation mode           
 segment_sample_window = check_segmentation(edf_filename, user_segment_duration, sample_window, sampling_rate);
 
 %% Intialize variables
-seizure_time_overflow_start = 0;          % seizure time overflows starts to the current file from other files
-seizure_time_overflow_end = 0;            % seizure time overflows ends to the current file from other files
-
+shift = 0;
+artifact_samples_all = [];
 %% Main Script applied to each subject's record separately
 fprintf(2,'--------------------------------------------------------------------------------------\n');
 for file_number = 1:num_edf_files % iterate through the subject's included files/recordings
@@ -104,8 +103,8 @@ for file_number = 1:num_edf_files % iterate through the subject's included files
         numSegments = floor((size(data_original,1) - 3*fs) / (3*fs))+1;
         [b,a] = butter(3, 900/(0.5*new_fs), 'low');
         
-        CNN_cell = cell(n,1);
-        epilept_cell = cell(n,1);
+        CNN_cell = [];
+        epilept_cell = [];
 
         %% prepare the data
         for ch = 1:size(data_original, 2)
@@ -130,8 +129,8 @@ for file_number = 1:num_edf_files % iterate through the subject's included files
     
             %% classify data with all CNNs
             probs = predict(convnet, allSegments); 
-            CNN_cell{ind}(ch,:) = probs(:,1)';
-            epilept_cell{ind}(ch,:) = probs(:,3)';
+            CNN_cell(ch,:) = probs(:,1)';
+            epilept_cell(ch,:) = probs(:,3)';
         end
             % combine with previous files (if any)
         if file_number > 1 
