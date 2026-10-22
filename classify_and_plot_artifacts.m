@@ -8,5 +8,5 @@ for i = 1:length(patients)
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
     [CNN_probabilities, epilept_probs, artifact_samples_all, bad_chan_idx] = read_and_classify_data(subj_num, data_dir);
 
-    plot_probabilitites(CNN_probabilities, artefact_samples, bad_chan_idx)
+    plot_probabilitites(CNN_probabilities, artifact_samples_all, bad_chan_idx,subj_num)
 end
