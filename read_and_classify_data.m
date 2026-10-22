@@ -43,6 +43,7 @@ fprintf(2,'\n======                      The list of available edf files        
 %% Process the edf files based on the user-defined datetime range
 fprintf(2,'\n======       The processed list of edf files based on the datetime range        ======\n');
 [edf_filename, start_datetime, end_datetime, sampling_rate, sample_window, num_edf_files] = exclude_files(edf_filename, user_datetime_range, start_datetime, end_datetime, data_length, sampling_rate);
+artifact_shift = sample_window(1,1);
 %% Extracting bad channels
 [~,~, label, ~] = check_data(data_dir, edf_filename(1));
 [~, bipo_inds, ~] = bipolar_montage_indices(label); % get montage indices
@@ -142,6 +143,6 @@ for file_number = 1:num_edf_files % iterate through the subject's included files
         end
     end
 end
-
+artifact_samples_all = artifact_samples_all - artifact_shift;
 artifact_samples_all = artifact_samples_all / fs;
 
