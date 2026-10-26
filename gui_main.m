@@ -1,5 +1,7 @@
 %% Define subject
 patients = [12,19,20,21,22,23,24,25,26,28,27,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
+n_max = 50;
+n_max_row = 5;
 
 all_info = [];
 all_samples = [];
@@ -9,15 +11,76 @@ for p = 1:length(patients)
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
 
     %% Get CNN map for sample extraction
-    [CNN_cell, data_original,data_hfb, bipolar_labels,bad_channel_idx] = get_artefact_map(subj_num, data_dir);
-    
-    %% Get desired 100 samples
-    [signal_samples,info] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx);
+    address = "/projects3/EPIHFO/EPIHFO/seegartifacts/maps/Pat" + string(subj_num);
+    saved = dir(address + "*");
 
-    info = [info,repmat(subj_num,100,1)];
-    all_info = [all_info; info];
-    all_samples = cat(3,all_samples, signal_samples);
+    if ~isempty(saved)
+        fprintf("%d maps data saved for subject %d, using them to extract samples\n",numel(saved),subj_num)
+        for k = 1:numel(saved)
+            load(fullfile(saved(k).folder, saved(k).name));
+            CNN_cell = patient_data.CNNmap;
+            data_original = patient_data.broadband;
+            data_hfb = patient_data.hfb;
+            bipolar_labels = patient_data.labels;
+            bad_channel_idx = patient_data.badchannels;
+            artefact_samples = patient_data.artifacts;
+
+            %% Get desired samples
+            [signal_samples,info] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row);
+            info = [info,num2cell(repmat(subj_num,n_max,1))];
+
+            all_samples = cat(3, all_samples, signal_samples);
+            all_info    = [all_info; info];
+    
+            % keep only the n_max highest scores overall
+            scores = cell2mat(all_info(:,1));
+            [~, ord] = sort(scores, 'descend');
+            ord = ord(1:min(n_max, numel(ord)));
+            all_samples = all_samples(:,:,ord);
+            all_info    = all_info(ord,:);
+
+        end
+        gui_data.samples = all_samples;
+        gui_data.info = all_info;
+        address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
+        save(address, "gui_data","-v7.3");
+
+    else
+        
+        fprintf("No saved maps for subject %d, starting classifying the data\n",subj_num)
+        address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
+        get_artefact_map(subj_num, data_dir);
+        saved = dir(address + "*");
+        for k = 1:numel(saved)
+            load(fullfile(saved(k).folder, saved(k).name));
+            CNN_cell = patient_data.CNNmap;
+            data_original = patient_data.broadband;
+            data_hfb = patient_data.hfb;
+            bipolar_labels = patient_data.labels;
+            bad_channel_idx = patient_data.badchannels;
+            artefact_samples = patient_data.artifacts;
+
+            include_bad = 0; % show samples in bad channels in gui, 0 = no, 1 = yes 
+            [signal_samples,info] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row, include_bad);
+            info = [info,num2cell(repmat(subj_num,n_max,1))];
+
+            % merge with what we already have
+            all_samples = cat(3, all_samples, signal_samples);
+            all_info    = [all_info; info];
+    
+            % keep only the n_max highest scores overall
+            scores = cell2mat(all_info(:,1));
+            [~, ord] = sort(scores, 'descend');
+            ord = ord(1:min(n_max, numel(ord)));
+            all_samples = all_samples(:,:,ord);
+            all_info    = all_info(ord,:);
+        end
+        address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
+        save(address, "gui_data","-v7.3");
+    end
+
+    
 end
 %% Start GUI
-chanNames = cellstr(string(bipolar_labels(info(:,2))));
-labelSignals(signal_samples, info, chanNames, 2048, 'labels.mat', true, true);
+
+labelSignals(gui_data.samples, gui_data.info, 2048, 'labels.mat', true, true);
