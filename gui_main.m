@@ -4,10 +4,11 @@ n_max = 50;
 n_max_row = 5;
 include_bad = 0; % show samples in bad channels in gui, 0 = no, 1 = yes 
 
-
 all_info = [];
 all_samples = [];
-for p = 1:length(patients)
+all_info_allchans = [];
+all_samples_allchans = [];
+for p = 2:length(patients)
 
     subj_num = patients(p);
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
@@ -15,9 +16,9 @@ for p = 1:length(patients)
     %% Get CNN map for sample extraction
     address = "/projects3/EPIHFO/EPIHFO/seegartifacts/maps/Pat" + string(subj_num);
     saved = dir(address + "*");
-
+%{
     if ~isempty(saved)
-        fprintf("%d maps data saved for subject %d, using them to extract samples\n",numel(saved),subj_num)
+        fprintf("%d map(s) saved for subject %d, using them to extract samples\n",numel(saved),subj_num)
         for k = 1:numel(saved)
             load(fullfile(saved(k).folder, saved(k).name));
             CNN_cell = patient_data.CNNmap;
@@ -28,7 +29,7 @@ for p = 1:length(patients)
             artefact_samples = patient_data.artifacts;
 
             %% Get desired samples
-            [signal_samples,info] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row, include_bas);
+            [signal_samples,info] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row, include_bad);
             info = [info,num2cell(repmat(subj_num,n_max,1))];
 
             all_samples = cat(3, all_samples, signal_samples);
@@ -41,14 +42,23 @@ for p = 1:length(patients)
             all_samples = all_samples(:,:,ord);
             all_info    = all_info(ord,:);
 
-        end
-        gui_data.samples = all_samples;
-        gui_data.info = all_info;
-        address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
-        save(address, "gui_data","-v7.3");
+            [signal_samples_allchans,info_allchans] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row, 1);
+            info_allchans = [info_allchans,num2cell(repmat(subj_num,n_max,1))];
 
-    else
+            % merge with what we already have
+            all_samples_allchans = cat(3, all_samples_allchans, signal_samples_allchans);
+            all_info_allchans    = [all_info_allchans; info_allchans];
+    
+            % keep only the n_max highest scores overall
+            scores = cell2mat(all_info_allchans(:,1));
+            [~, ord] = sort(scores, 'descend');
+            ord = ord(1:min(n_max, numel(ord)));1
+            all_samples_allchans = all_samples_allchans(:,:,ord);
+            all_info_allchans    = all_info_allchans(ord,:);
+        end
         
+    else
+%}
         fprintf("No saved maps for subject %d, starting classifying the data\n",subj_num)
         address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
         get_artefact_map(subj_num, data_dir);
@@ -75,13 +85,36 @@ for p = 1:length(patients)
             ord = ord(1:min(n_max, numel(ord)));
             all_samples = all_samples(:,:,ord);
             all_info    = all_info(ord,:);
-        end
-        address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
-        save(address, "gui_data","-v7.3");
-    end
+        
+            %% same but including bad channels
+            [signal_samples_allchans,info_allchans] = get_gui_samples(CNN_cell, data_original, data_hfb, bipolar_labels, bad_channel_idx, n_max, n_max_row, 1);
+            info_allchans = [info_allchans,num2cell(repmat(subj_num,n_max,1))];
 
+            % merge with what we already have
+            all_samples_allchans = cat(3, all_samples_allchans, signal_samples_allchans);
+            all_info_allchans    = [all_info_allchans; info_allchans];
     
-end
+            % keep only the n_max highest scores overall
+            scores = cell2mat(all_info_allchans(:,1));
+            [~, ord] = sort(scores, 'descend');
+            ord = ord(1:min(n_max, numel(ord)));
+            all_samples_allchans = all_samples_allchans(:,:,ord);
+            all_info_allchans    = all_info_allchans(ord,:);
+        end
+    end
+    gui_data.samples = all_samples;
+    gui_data.info = all_info;
+
+    address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/good_channels/Pat" + string(subj_num);
+    save(address, "gui_data","-v7.3");
+
+    gui_data.samples = all_samples_allchans;
+    gui_data.info = all_info_allchans;
+
+    address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/all_channels/Pat" + string(subj_num);
+    save(address, "gui_data","-v7.3");
+    
+%end
 %% Start GUI
 
 labelSignals(gui_data.samples, gui_data.info, 2048, 'labels.mat', true, true);
