@@ -11,19 +11,26 @@ CNN_map = [];
 artefacts = [];
 length_previous = 0;
 
-badchannels = patient_data.badchannels;
 for k = 1:numel(saved) 
     % load saved map
     load(fullfile(saved(k).folder, saved(k).name));
-
+    fprintf("Loaded file %d / %d \n", k, numel(saved))
     % contruct CNN map
     CNN_map = [CNN_map, patient_data.CNNmap];
 
     % artefact sample is in seconds, and the start is same as each files
     % map
     artefacts = [artefacts; patient_data.artifacts + length_previous];
-    length_previous = size(patient_data.broadband,1) ./ 2048;
+    length_previous = length_previous + size(patient_data.broadband,1) ./ 2048;
+    badchannels = patient_data.badchannels;
+
+    clear patient_data
+    fprintf("Combined data from file %d\n", k)
 end
+fprintf("Starting plotting\n")
+
+total_per_t = sum(CNN_map,1);
+total_per_c = sum(CNN_map,2);
 
 artefact_segments = artefacts / 3; % fractional segment index, x-axis units
 nTimepoints = size(CNN_map,2);
@@ -63,7 +70,7 @@ ylabel('Channel',FontSize=13);
 title(sprintf('CNN artifact probability map - Patient %d', subj_num));
 hold on;
 
-nChannels = size(CNN_probabilities,1);
+nChannels = size(CNN_map,1);
 % mark artefact times with vertical lines across all channels
 for i = 1:size(artefact_segments,1)
     art_start_sec = artefact_segments(i,1) * 3; % convert segment -> seconds
