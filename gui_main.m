@@ -7,7 +7,7 @@ all_info = [];
 all_samples = [];
 all_info_allchans = [];
 all_samples_allchans = [];
-for p = 1:18 % jatketaan illaks 19
+for p = 1:numel(patients) % jatketaan illaks 19
 
     subj_num = patients(p);
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
@@ -64,6 +64,7 @@ for p = 1:18 % jatketaan illaks 19
         fprintf("No saved maps for subject %d, starting classifying the data\n",subj_num)
         address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
         get_artefact_map(subj_num, data_dir);
+        fprintf("Map loaded: extracting gui samples for this subject (%d)\n", subj_num)
         saved = dir(address + "*");
         for k = 1:numel(saved)
             load(fullfile(saved(k).folder, saved(k).name));
