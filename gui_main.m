@@ -2,13 +2,12 @@
 patients = [12,19,20,21,22,23,24,25,26,28,27,29,30,31,32,33,34,35,36,37,38,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60];
 n_max = 50;
 n_max_row = 5;
-include_bad = 0; % show samples in bad channels in gui, 0 = no, 1 = yes 
-
+include_bad = 0; % show samples in bad channels in gui, 0 = no, 1 = yes
 all_info = [];
 all_samples = [];
 all_info_allchans = [];
 all_samples_allchans = [];
-for p = 2:length(patients)
+for p = 1:18 % jatketaan illaks 19
 
     subj_num = patients(p);
     data_dir = "/projects3/EPIHFO/EPIHFO/Pat" + string(subj_num);
@@ -16,7 +15,7 @@ for p = 2:length(patients)
     %% Get CNN map for sample extraction
     address = "/projects3/EPIHFO/EPIHFO/seegartifacts/maps/Pat" + string(subj_num);
     saved = dir(address + "*");
-%{
+
     if ~isempty(saved)
         fprintf("%d map(s) saved for subject %d, using them to extract samples\n",numel(saved),subj_num)
         for k = 1:numel(saved)
@@ -52,13 +51,13 @@ for p = 2:length(patients)
             % keep only the n_max highest scores overall
             scores = cell2mat(all_info_allchans(:,1));
             [~, ord] = sort(scores, 'descend');
-            ord = ord(1:min(n_max, numel(ord)));1
+            ord = ord(1:min(n_max, numel(ord)));
             all_samples_allchans = all_samples_allchans(:,:,ord);
             all_info_allchans    = all_info_allchans(ord,:);
         end
         
     else
-%}
+
         fprintf("No saved maps for subject %d, starting classifying the data\n",subj_num)
         address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/Pat" + string(subj_num);
         get_artefact_map(subj_num, data_dir);
@@ -114,7 +113,16 @@ for p = 2:length(patients)
     address = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/all_channels/Pat" + string(subj_num);
     save(address, "gui_data","-v7.3");
     
-%end
-%% Start GUI
+end
 
-labelSignals(gui_data.samples, gui_data.info, 2048, 'labels.mat', true, true);
+%% Run GUI for all subjects that have gui data saved
+for i = 1:numel(patients)
+    subj_num = patients(i);
+    datapath = "/projects3/EPIHFO/EPIHFO/seegartifacts/gui_samples/good_channels/Pat" + string(subj_num +'.mat'); % good_channels or all_channels
+
+    if ~isfile(datapath); warning('No GUI data for patient %d, skipping.', subj_num); continue; end % no gui samples: run the code above
+    S = load(datapath);
+    if all(cellfun(@double, S.gui_data.info(:,6)) > 0); continue; end          % everything labeled already
+
+    labelSignals(datapath);
+end
